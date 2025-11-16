@@ -1,0 +1,28 @@
+{% extends 'base.html' %} {% block head %}<title>Search Results</title>{%
+endblock %} {% block body %}
+<div class="dashboard-container">
+  <h2>Search Results</h2>
+  {% if records|length < 1 %}
+  <p>No matching records found.</p>
+  {% else %}
+  <table class="record-table">
+    <tr>
+      <th>ID</th>
+      <th>Patient ID</th>
+      <th>Name</th>
+      <th>Symptoms</th>
+      <th>Diagnosis</th>
+    </tr>
+    {% for record in records %}
+    <tr>
+      <td>{{ record.id }}</td>
+      <td>{{ record.patient_id }}</td>
+      <td>{{ decrypt(record.name).decode() }}</td>
+      <td>{{ decrypt(record.symptoms).decode() }}</td>
+      <td>{{ decrypt(record.diagnosis).decode() }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
+{% endblock %}

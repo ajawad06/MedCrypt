@@ -1,0 +1,30 @@
+{% extends 'base.html' %} {% block head %}<title>My Medical Records</title>{%
+endblock %} {% block body %}
+<div class="dashboard-container">
+  <div class="logout">
+    <a href="{{ url_for('logout') }}">Logout</a>
+  </div>
+
+  <h2>My Medical Records</h2>
+  {% if records|length < 1 %}
+  <p>No records found.</p>
+  {% else %}
+  <table class="record-table">
+    <tr>
+      <th>ID</th>
+      <th>Name</th>
+      <th>Symptoms</th>
+      <th>Diagnosis</th>
+    </tr>
+    {% for record in records %}
+    <tr>
+      <td>{{ record.id }}</td>
+      <td>{{ decrypt(record.name).decode() }}</td>
+      <td>{{ decrypt(record.symptoms).decode() }}</td>
+      <td>{{ decrypt(record.diagnosis).decode() }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
+{% endblock %}

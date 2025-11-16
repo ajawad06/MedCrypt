@@ -1,0 +1,33 @@
+{% extends 'base.html' %} {% block head %}
+<title>Update Record</title>
+{% endblock %} {% block body %}
+<div class="content">
+  <h1>Update Medical Record</h1>
+
+  <form action="/update_record/{{ record.id }}" method="POST">
+    <input
+      type="text"
+      name="name"
+      placeholder="Patient Name"
+      value="{{ decrypt(record.name).decode() }}"
+      required
+    />
+    <input
+      type="text"
+      name="symptoms"
+      placeholder="Symptoms"
+      value="{{ decrypt(record.symptoms).decode() }}"
+      required
+    />
+    <input
+      type="text"
+      name="diagnosis"
+      placeholder="Diagnosis"
+      value="{{ decrypt(record.diagnosis).decode() }}"
+      required
+    />
+    <input type="text" name="keywords" placeholder="Searchable Keywords" />
+    <input type="submit" value="Update Record" />
+  </form>
+</div>
+{% endblock %}
