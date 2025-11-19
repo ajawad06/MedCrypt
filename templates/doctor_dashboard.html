@@ -66,6 +66,9 @@
       </div>
     </form>
   </dialog>
+  {% if request.args.get('error') %}
+  <div class="error">{{ request.args.get('error') }}</div>
+  {% endif %}
 
   <h3>All Records</h3>
   {% if records|length < 1 %}
@@ -91,6 +94,7 @@
       <th>Name</th>
       <th>Symptoms</th>
       <th>Diagnosis</th>
+      <th>Nurse</th>
       <th>Actions</th>
     </tr>
     {% for record in records %}
@@ -100,6 +104,7 @@
       <td>{{ decrypt(record.name).decode() }}</td>
       <td>{{ decrypt(record.symptoms).decode() }}</td>
       <td>{{ decrypt(record.diagnosis).decode() }}</td>
+      <td>{{ record.nurse_id }}</td>
       <td>
         <a href="{{ url_for('delete_record', id=record.id) }}">Delete</a><br />
         <a href="{{ url_for('update_record', id=record.id) }}">Update</a>

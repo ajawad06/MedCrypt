@@ -78,7 +78,8 @@ select:focus {
 
 /* === Buttons === */
 button,
-.dialog-buttons button {
+.dialog-buttons button,
+input[type="submit"] {
   background-color: #0077cc;
   color: white;
   padding: 10px 20px;

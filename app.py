@@ -6,8 +6,6 @@ import hashlib
 from werkzeug.security import check_password_hash,generate_password_hash
 from config import FERNET_KEY, SECRET_KEY, DATABASE_URI
 
-
-
 # FLASK APP BASIC CONFIGURATION
 # 1. APP
 app=Flask(__name__)
@@ -18,7 +16,6 @@ db=SQLAlchemy(app)
 fernet = Fernet(FERNET_KEY.encode())
 # 4. SESSION KEY
 app.secret_key = SECRET_KEY
-
 
 
 # USER COLUMN IN DB
@@ -119,25 +116,25 @@ def doctor_dashboard():
     return render_template('doctor_dashboard.html', records=records, decrypt=fernet.decrypt, patients=patients, nurses=nurses)
 
 # 2.1.A. DR ADDS PATIENT
-@app.route('/register_patient', methods=['GET', 'POST'])
+@app.route('/register_patient', methods=['POST'])
 def register_patient():
     if session.get('role') != 'doctor':
         return "Access Denied", 403
 
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
+    username = request.form['username']
+    password = request.form['password']
 
-        if User.query.filter_by(username=username).first():
-            return render_template('register_patient.html', error="Username already exists")
+    # Check if username already exists
+    if User.query.filter_by(username=username).first():
+        # Redirect back with flash message
+        return redirect(url_for('doctor_dashboard', error="Username already exists"))
 
-        hashed_pw = generate_password_hash(password)
-        new_patient = User(username=username, password_hash=hashed_pw, role='patient')
-        db.session.add(new_patient)
-        db.session.commit()
-        return redirect(url_for('doctor_dashboard'))
+    hashed_pw = generate_password_hash(password)
+    new_patient = User(username=username, password_hash=hashed_pw, role='patient')
+    db.session.add(new_patient)
+    db.session.commit()
 
-    return render_template('register_patient.html')
+    return redirect(url_for('doctor_dashboard'))
 
 #2.1.B. DR REMOVES PATIENT
 @app.route('/remove_patient/<int:id>')
@@ -150,7 +147,7 @@ def remove_patient(id):
         return "Only patients can be removed.", 400
 
     try:
-        # Optional: delete associated medical records first
+        # Records + Patient delete
         MedicalRecord.query.filter_by(patient_id=patient.id).delete()
         db.session.delete(patient)
         db.session.commit()
@@ -169,7 +166,7 @@ def delete_record(id):
     except: 
         return "There was a problem deleting this record"
 
-# 2.1.D. DR UPDATES RECORD
+# 2.1.D DR UPDATES RECORD
 @app.route('/update_record/<int:id>', methods=['GET', 'POST'])
 def update_record(id):
     if session.get('role') != 'doctor':
@@ -180,20 +177,27 @@ def update_record(id):
         name = request.form['name']
         symptoms = request.form['symptoms']
         diagnosis = request.form['diagnosis']
-        keywords = request.form['keywords']
-        # Encrypt Updated Details
+        keywords = request.form.get('keywords', '').strip()
+        # Encrypt updated fields 
         record.name = fernet.encrypt(name.encode())
         record.symptoms = fernet.encrypt(symptoms.encode())
         record.diagnosis = fernet.encrypt(diagnosis.encode())
-        record.keywords_hash = hashlib.sha256(keywords.encode()).hexdigest()
-
+        # Update keywords if user entered something
+        if keywords != "":
+            # Split by comma → hash individually
+            key_list = [k.strip().lower() for k in keywords.split(',') if k.strip()]
+            key_hashes = [hashlib.sha256(k.encode()).hexdigest() for k in key_list]
+            # Save comma-separated list of hashes
+            record.keywords_hash = ",".join(key_hashes)
         try:
             db.session.commit()
             return redirect(url_for('doctor_dashboard'))
-        except:
-            return "There was a problem updating this record"
+        except Exception as e:
+            return f"There was a problem updating this record: {e}"
 
     return render_template('update_record.html', record=record, decrypt=fernet.decrypt)
+
+
 
 # 2.1.E. DR SEARCHES RECORD
 @app.route('/search_record', methods=['GET', 'POST'])
@@ -212,15 +216,10 @@ def search_record():
 
     return render_template('search_record.html', records=matched_records, decrypt=fernet.decrypt) 
 
-# 2.2 NURSE DASHBOARD
+# 2.2 NURSE DASHBOARD --- ye complete krne wla
 @app.route('/nurse')
 def nurse_dashboard():
-    if session.get('role') != 'nurse':
-        return "Access Denied", 403
-
-    nurse_id = session.get('user_id')
-    records = MedicalRecord.query.filter_by(nurse_id=nurse_id).all()
-    return render_template('nurse_dashboard.html', records=records, decrypt=fernet.decrypt)
+    pass
 
 
 # 2.3 PATIENT DASHBOARD
@@ -243,3 +242,47 @@ def logout():
 
 if __name__=="__main__":
     app.run(debug=True)
+
+
+## --- WORK LEFT ---
+
+# 1. Nurse Dashboard: Only assigned records (excluding diagnosis)
+# 2. Nurse or Dr IDs ki jgh onke names dikhany in html tables using SQL JOINS statements 
+# 3. Use HMAC instead of SHA256 everywhere => concept of SSE used i.e. search tokens using HMAC
+# 4. Audit Logs - Detail Below
+# 5. Record Integrity Hashing - Detail Below
+# 6. Dummy Keywords - Detail Below
+
+
+
+##  --- INFO SECURITY MEASURES ---
+
+# 1. CONFIDENTIALITY:
+        # 1. Role-Based Access Control (RBAC): Each user sees only permitted data
+                # - Doctor: All records and fields
+                # - Nurse: Only assigned records (excluding diagnosis)
+                # - Patient: Only their own records
+        # 2. Field-Level Encryption: All sensitive fields (name, symptoms, diagnosis) are encrypted using Fernet (AES-128)
+        # 3. Secure Keyword Search:
+                # - Real keywords are hashed using HMAC with a secret key
+                # - Dummy keyword hashes are added to prevent offline guessing and frequency analysis
+
+# 2. INTEGRITY:
+        # 1. Record Integrity Hashing:
+                # integrity_hash = SHA256(patient_id + doctor_id + nurse_id + encrypted_fields)
+                # On access, the hash is recomputed and verified to detect tampering
+        # 2. Controlled Updates: Only doctors can modify records; others have read-only access
+        # 3. Tamper-Evident Audit Logs:
+                # Each access/modification is logged with:
+                # log_hash = HMAC(secret_key, f"{user_id}|{record_id}|{action}|{timestamp}")
+
+# 3. AVAILABILITY:
+        # 1. Role-Specific Dashboards: Separate views for doctor, nurse, and patient ensure focused access
+        # 2. Lightweight Database: SQLite used for simplicity; can be upgraded to PostgreSQL for scalability
+
+
+# --- INNOVATIVE FEATURES ---
+
+# 1. Dummy Keyword Padding: Prevents keyword count leakage & frequency analysis
+# 2. Record Integrity Hashing: Detects tampering of encrypted fields
+# 3. Search Tokens (SSE-lite): Secure keyword search using HMAC tokens

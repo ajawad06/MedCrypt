@@ -15,6 +15,8 @@ endblock %} {% block body %}
       <th>Name</th>
       <th>Symptoms</th>
       <th>Diagnosis</th>
+      <th>Nurse</th>
+      <th>Doctor</th>
     </tr>
     {% for record in records %}
     <tr>
@@ -22,6 +24,8 @@ endblock %} {% block body %}
       <td>{{ decrypt(record.name).decode() }}</td>
       <td>{{ decrypt(record.symptoms).decode() }}</td>
       <td>{{ decrypt(record.diagnosis).decode() }}</td>
+      <td>{{ record.nurse_id }}</td>
+      <td>{{ record.doctor_id }}</td>
     </tr>
     {% endfor %}
   </table>
