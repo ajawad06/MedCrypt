@@ -9,6 +9,7 @@ endblock %} {% block body %}
   {% if records|length < 1 %}
   <p>No records found.</p>
   {% else %}
+  <!-- Show the logged in patient's records -->
   <table class="record-table">
     <tr>
       <th>ID</th>
@@ -26,7 +27,6 @@ endblock %} {% block body %}
       <td>{{ decrypt(record.diagnosis).decode() }}</td>
       <td>{{ record.nurse.username }}</td>
       <td>{{ record.doctor.username }}</td>
-
     </tr>
     {% endfor %}
   </table>

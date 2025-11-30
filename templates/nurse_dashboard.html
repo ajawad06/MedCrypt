@@ -1,84 +1,46 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
+  <head>
+    <meta charset="UTF-8" />
     <title>Nurse Dashboard</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
-    <style>
-        .container {
-            width: 90%;
-            margin: auto;
-            margin-top: 40px;
-        }
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/main.css') }}"
+    />
+  </head>
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 15px;
-        }
-
-        th, td {
-            padding: 12px;
-            text-align: left;
-        }
-
-        th {
-            background-color: #003366;
-            color: white;
-        }
-
-        tr:nth-child(even) {
-            background-color: #f2f7ff;
-        }
-
-        h2 {
-            margin-bottom: 15px;
-            color: #003366;
-        }
-    </style>
-</head>
-
-<body>
-
-<div class="container">
-
-    <div style="text-align:right;">
+  <body>
+    <div class="dashboard-container">
+      <!-- Logout link -->
+      <div class="logout">
         <a href="{{ url_for('logout') }}">Logout</a>
-    </div>
+      </div>
 
-    <h2>Your Patients</h2>
+      <h2>Assigned Patients</h2>
 
-    {% if records %}
-    <table>
+      {% if records %}
+      <table class="patient-table">
         <thead>
-            <tr>
-                <th>Patient Name</th>
-                <th>Symptoms</th>
-                <th>Doctor</th>
-            </tr>
+          <tr>
+            <th>Patient Name</th>
+            <th>Symptoms</th>
+            <th>Doctor</th>
+          </tr>
         </thead>
 
         <tbody>
-            {% for r in records %}
-            <tr>
-                <!-- Decrypted patient name -->
-                <td>{{ decrypt(r.name).decode() }}</td>
-
-                <!-- Decrypted symptoms (allowed for nurse) -->
-                <td>{{ decrypt(r.symptoms).decode() }}</td>
-
-                <!-- Doctor username using SQLAlchemy relationship -->
-                <td>{{ r.doctor.username }}</td>
-            </tr>
-            {% endfor %}
+          {% for r in records %}
+          <tr>
+            <td>{{ decrypt(r.name).decode() }}</td>
+            <td>{{ decrypt(r.symptoms).decode() }}</td>
+            <td>{{ r.doctor.username }}</td>
+          </tr>
+          {% endfor %}
         </tbody>
-
-    </table>
-    {% else %}
-        <p>No records assigned to you yet.</p>
-    {% endif %}
-
-</div>
-
-</body>
+      </table>
+      {% else %}
+      <p>No records assigned to you yet.</p>
+      {% endif %}
+    </div>
+  </body>
 </html>

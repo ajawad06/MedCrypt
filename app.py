@@ -4,13 +4,9 @@ from datetime import datetime
 from cryptography.fernet import Fernet
 from werkzeug.security import check_password_hash, generate_password_hash
 from sqlalchemy.orm import aliased
-
-
 import hashlib     # for HMAC hashing
 import hmac        # for HMAC function
-
 from config import FERNET_KEY, SECRET_KEY, DATABASE_URI, HMAC_KEY
-
 
 # HMAC FUNCTION TO COMPUTE HMAC OF A KEYWORD
 import hmac, hashlib
@@ -81,11 +77,9 @@ class MedicalRecord(db.Model):
     nurse_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     keywords_hmac = db.Column(db.Text)
     
-
     patient = db.relationship('User', foreign_keys=[patient_id], backref='patient_records')
     doctor = db.relationship('User', foreign_keys=[doctor_id], backref='doctor_records')
     nurse = db.relationship('User', foreign_keys=[nurse_id], backref='nurse_records')
-
 
     def __repr__(self):
         return f"<MedicalRecord id={self.id} patient_id={self.patient_id}>"
@@ -93,8 +87,7 @@ class MedicalRecord(db.Model):
 
 @app.route('/', methods=['GET', 'POST'])
 def login():
-    user = None   # ← FIX: define user so it's always available
-
+    user = None   
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
@@ -310,6 +303,22 @@ def search_record():
         decrypt=fernet.decrypt
     )
 
+
+
+
+
+# 2.3 PATIENT DASHBOARD
+@app.route('/patient')
+def patient_dashboard():
+    if session.get('role') != 'patient':
+        return "Access Denied", 403
+    log_action(session['user_id'], "Accessed patient dashboard")
+    patient_id = session.get('user_id')
+    records = MedicalRecord.query.filter_by(patient_id=patient_id).all()
+
+    return render_template('patient_dashboard.html', records=records, decrypt=fernet.decrypt)
+
+
 @app.route('/nurse')
 def nurse_dashboard():
     if session.get('role') != 'nurse':
@@ -327,26 +336,12 @@ def nurse_dashboard():
         decrypt=fernet.decrypt
     )
 
-
-
-
-# 2.3 PATIENT DASHBOARD
-@app.route('/patient')
-def patient_dashboard():
-    if session.get('role') != 'patient':
-        return "Access Denied", 403
-    log_action(session['user_id'], "Accessed patient dashboard")
-    patient_id = session.get('user_id')
-    records = MedicalRecord.query.filter_by(patient_id=patient_id).all()
-
-    return render_template('patient_dashboard.html', records=records, decrypt=fernet.decrypt)
-
-
 # 3. LOGOUT
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect(url_for('login'))
+
 @app.route('/debug_hmac')
 def debug_hmac():
     records = MedicalRecord.query.all()
@@ -354,6 +349,7 @@ def debug_hmac():
     for r in records:
         html += f"<p>Record {r.id}: {r.keywords_hmac}</p>"
     return html
+
 # 4. AUDIT LOGS VIEWER
 @app.route('/audit_logs')
 def audit_logs():
@@ -362,6 +358,7 @@ def audit_logs():
     for log in logs:
         html += f"<p><b>User:</b> {log.user_id} | <b>Action:</b> {log.action} | <b>IP:</b> {log.ip_address} | <b>Time:</b> {log.timestamp}</p>"
     return html
+
 @app.route('/verify_audit_logs')
 def verify_logs():
     logs = AuditLog.query.all()
