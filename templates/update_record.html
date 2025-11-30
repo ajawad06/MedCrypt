@@ -1,17 +1,35 @@
-{% extends 'base.html' %} {% block head %}
+{% extends 'base.html' %} 
+{% block head %}
 <title>Update Record</title>
-{% endblock %} {% block body %}
+{% endblock %} 
+
+{% block body %}
 <div class="content">
   <h1>Update Medical Record</h1>
 
   <form action="/update_record/{{ record.id }}" method="POST">
-    <input
-      type="text"
-      name="name"
-      placeholder="Patient Name"
-      value="{{ decrypt(record.name).decode() }}"
-      required
-    />
+    <!-- Patient dropdown with pre-selected value -->
+    <select name="patient_id" required>
+      <option value="">Select Patient</option>
+      {% for patient in patients %}
+        <option value="{{ patient.id }}" {% if patient.id == record.patient_id %}selected{% endif %}>
+          {{ patient.username }}
+        </option>
+      {% endfor %}
+    </select>
+
+    <!-- Optional Nurse dropdown -->
+    {% if nurses %}
+    <select name="nurse_id" required>
+      <option value="">Select Nurse</option>
+      {% for nurse in nurses %}
+        <option value="{{ nurse.id }}" {% if nurse.id == record.nurse_id %}selected{% endif %}>
+          {{ nurse.username }}
+        </option>
+      {% endfor %}
+    </select>
+    {% endif %}
+
     <input
       type="text"
       name="symptoms"

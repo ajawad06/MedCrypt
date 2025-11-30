@@ -1,0 +1,28 @@
+{% extends 'base.html' %} {% block head %}
+<title>Verify Audit Logs</title>
+{% endblock %} {% block body %}
+<div class="dashboard-container">
+  <h2>Audit Log Verification</h2>
+
+  {% if results|length < 1 %}
+  <p>No logs found.</p>
+  {% else %}
+  <table class="record-table">
+    <tr>
+      <th>Log ID</th>
+      <th>Status</th>
+    </tr>
+    {% for result in results %}
+    <tr>
+      <td>{{ result.id }}</td>
+      {% if result.ok %}
+      <td style="color: green; font-weight: bold">✅ OK</td>
+      {% else %}
+      <td style="color: red; font-weight: bold">❌ TAMPERED</td>
+      {% endif %}
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
+{% endblock %}

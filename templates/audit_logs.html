@@ -1,0 +1,32 @@
+{% extends 'base.html' %} {% block head %}
+<title>Audit Logs</title>
+{% endblock %} {% block body %}
+<div class="dashboard-container">
+  <h2>Audit Logs</h2>
+
+  {% if logs|length < 1 %}
+  <p>No logs found.</p>
+  {% else %}
+  <table class="record-table">
+    <tr>
+      <th>ID</th>
+      <th>User ID</th>
+      <th>Action</th>
+      <th>Record ID</th>
+      <th>IP Address</th>
+      <th>Timestamp</th>
+    </tr>
+    {% for log in logs %}
+    <tr>
+      <td>{{ log.id }}</td>
+      <td>{{ log.user_id }}</td>
+      <td>{{ log.action }}</td>
+      <td>{{ log.record_id }}</td>
+      <td>{{ log.ip_address }}</td>
+      <td>{{ log.timestamp }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
+{% endblock %}
