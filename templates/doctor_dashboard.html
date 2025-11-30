@@ -1,125 +1,127 @@
-{% extends 'base.html' %} {% block head %}
+{% extends 'base.html' %}
+
+{% block head %}
 <title>InfoSec Project</title>
-{% endblock %} {% block body %}
+{% endblock %}
+
+{% block body %}
+
 <div class="dashboard-container">
+
   <div class="logout">
     <a href="{{ url_for('logout') }}">Logout</a>
   </div>
 
   <h2>Doctor Dashboard</h2>
+
+  <!-- ===================== PATIENTS ===================== -->
   <h3>All Patients</h3>
+
   <table class="patient-table">
     <tr>
       <th>Patient ID</th>
       <th>Username</th>
       <th>Actions</th>
     </tr>
+
     {% for patient in patients %}
     <tr>
       <td>{{ patient.id }}</td>
       <td>{{ patient.username }}</td>
       <td>
-        <a
-          href="{{ url_for('remove_patient', id=patient.id) }}"
-          onclick="return confirm('Are you sure you want to remove this patient?')"
-        >
+        <a href="{{ url_for('remove_patient', id=patient.id) }}"
+           onclick="return confirm('Are you sure you want to remove this patient?')">
           Remove
         </a>
       </td>
     </tr>
     {% endfor %}
   </table>
-  <!-- Trigger Button -->
-  <button
-    onclick="document.getElementById('registerPatientDialog').showModal()"
-  >
+
+  <!-- Register Patient Button -->
+  <button onclick="document.getElementById('registerPatientDialog').showModal()">
     Register Patient
   </button>
 
-  <!-- Native Dialog -->
+  <!-- Register Patient Dialog -->
   <dialog id="registerPatientDialog" class="record-dialog">
     <form method="POST" action="{{ url_for('register_patient') }}">
       <h3>Register New Patient</h3>
+
       {% if error %}
       <p class="error">{{ error }}</p>
       {% endif %}
-      <input
-        type="text"
-        name="username"
-        placeholder="Patient Username"
-        required
-      />
-      <input
-        type="password"
-        name="password"
-        placeholder="Temporary Password"
-        required
-      />
+
+      <input type="text" name="username" placeholder="Patient Username" required />
+      <input type="password" name="password" placeholder="Temporary Password" required />
+
       <div class="dialog-buttons">
         <button type="submit">Register</button>
-        <button
-          type="button"
-          onclick="document.getElementById('registerPatientDialog').close()"
-        >
+        <button type="button" onclick="document.getElementById('registerPatientDialog').close()">
           Cancel
         </button>
       </div>
     </form>
   </dialog>
+
   {% if request.args.get('error') %}
-  <div class="error">{{ request.args.get('error') }}</div>
+    <div class="error">{{ request.args.get('error') }}</div>
   {% endif %}
 
+  <!-- ===================== RECORDS ===================== -->
   <h3>All Records</h3>
+
   {% if records|length < 1 %}
-  <h4>There are no records. Create one below!</h4>
+    <h4>There are no records. Create one below!</h4>
   {% else %}
-  <form
-    method="POST"
-    action="{{ url_for('search_record') }}"
-    class="search-form"
-  >
-    <input
-      type="text"
-      name="keyword"
-      placeholder=" 🔍 Search Record"
-      required
-    />
+
+  <!-- Search -->
+  <form method="POST" action="{{ url_for('search_record') }}" class="search-form">
+    <input type="text" name="keyword" placeholder=" 🔍 Search Record" required />
     <button type="submit">Search</button>
   </form>
+
   <table class="record-table">
     <tr>
       <th>ID</th>
-      <th>Patient ID</th>
+      <th>Patient</th>
       <th>Name</th>
       <th>Symptoms</th>
       <th>Diagnosis</th>
       <th>Nurse</th>
       <th>Actions</th>
     </tr>
+
     {% for record in records %}
     <tr>
       <td>{{ record.id }}</td>
-      <td>{{ record.patient_id }}</td>
+
+      <!-- Patient name from relationship -->
+      <td>{{ record.patient.username }}</td>
+
+      <!-- Decrypted fields -->
       <td>{{ decrypt(record.name).decode() }}</td>
       <td>{{ decrypt(record.symptoms).decode() }}</td>
       <td>{{ decrypt(record.diagnosis).decode() }}</td>
-      <td>{{ record.nurse_id }}</td>
+
+      <!-- Nurse name from relationship -->
+      <td>{{ record.nurse.username }}</td>
+
       <td>
-        <a href="{{ url_for('delete_record', id=record.id) }}">Delete</a><br />
+        <a href="{{ url_for('delete_record', id=record.id) }}">Delete</a><br>
         <a href="{{ url_for('update_record', id=record.id) }}">Update</a>
       </td>
     </tr>
     {% endfor %}
   </table>
-  {% endif %}
 
-  <!-- Trigger Button -->
+  {% endif %}  <!-- ✅ This closes the IF records block -->
+
+  <!-- ===================== ADD RECORD ===================== -->
   <button onclick="document.getElementById('addRecordDialog').showModal()">
     Add Record
   </button>
 
-  <!-- Native Dialog Element -->
   <dialog id="addRecordDialog" class="record-dialog">
     <form method="POST" action="{{ url_for('doctor_dashboard') }}">
       <h3>Add New Medical Record</h3>
@@ -127,37 +129,33 @@
       <input type="text" name="name" placeholder="Patient Name" required />
       <input type="text" name="symptoms" placeholder="Symptoms" required />
       <input type="text" name="diagnosis" placeholder="Diagnosis" required />
-      <input
-        type="text"
-        name="keywords"
-        placeholder="Searchable Keywords"
-        required
-      />
+      <input type="text" name="keywords" placeholder="Searchable Keywords" required />
 
+      <!-- Patients dropdown -->
       <select name="patient_id" required>
         <option value="">Select Patient</option>
         {% for patient in patients %}
-        <option value="{{ patient.id }}">{{ patient.username }}</option>
+          <option value="{{ patient.id }}">{{ patient.username }}</option>
         {% endfor %}
       </select>
 
+      <!-- Nurses dropdown -->
       <select name="nurse_id" required>
         <option value="">Select Nurse</option>
         {% for nurse in nurses %}
-        <option value="{{ nurse.id }}">{{ nurse.username }}</option>
+          <option value="{{ nurse.id }}">{{ nurse.username }}</option>
         {% endfor %}
       </select>
 
       <div class="dialog-buttons">
         <button type="submit">Submit Record</button>
-        <button
-          type="button"
-          onclick="document.getElementById('addRecordDialog').close()"
-        >
+        <button type="button" onclick="document.getElementById('addRecordDialog').close()">
           Cancel
         </button>
       </div>
     </form>
   </dialog>
+
 </div>
+
 {% endblock %}

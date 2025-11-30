@@ -24,8 +24,9 @@ endblock %} {% block body %}
       <td>{{ decrypt(record.name).decode() }}</td>
       <td>{{ decrypt(record.symptoms).decode() }}</td>
       <td>{{ decrypt(record.diagnosis).decode() }}</td>
-      <td>{{ record.nurse_id }}</td>
-      <td>{{ record.doctor_id }}</td>
+      <td>{{ record.nurse.username }}</td>
+      <td>{{ record.doctor.username }}</td>
+
     </tr>
     {% endfor %}
   </table>
