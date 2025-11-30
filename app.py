@@ -13,12 +13,16 @@ from config import FERNET_KEY, SECRET_KEY, DATABASE_URI, HMAC_KEY
 
 
 # HMAC FUNCTION TO COMPUTE HMAC OF A KEYWORD
-def compute_hmac(keyword: str):
+import hmac, hashlib
+from config import HMAC_KEY
+
+def compute_hmac(keyword):
     return hmac.new(
-        HMAC_KEY.encode(),
+        HMAC_KEY,
         keyword.encode(),
         hashlib.sha256
     ).hexdigest()
+
 # LOGGING FUNCTION
 def log_action(user_id, action, record_id=None):
     timestamp = datetime.utcnow()
@@ -40,7 +44,7 @@ def log_action(user_id, action, record_id=None):
 def compute_log_hash(user_id, record_id, action, timestamp):
     message = f"{user_id}|{record_id}|{action}|{timestamp}"
     return hmac.new(
-        HMAC_KEY.encode(),
+        HMAC_KEY,
         message.encode(),
         hashlib.sha256
     ).hexdigest()
@@ -281,26 +285,30 @@ def update_record(id):
 
     return render_template('update_record.html', record=record, decrypt=fernet.decrypt)
 
-# 2.1.E. DR SEARCHES RECORD
 @app.route('/search_record', methods=['GET', 'POST'])
 def search_record():
     if session.get('role') != 'doctor':
         log_action(session.get('user_id'), "Unauthorized doctor panel access attempt")
-        
         return "Access Denied", 403
-        log_action(session['user_id'], "Accessed doctor dashboard")
 
     matched_records = []
+
     if request.method == 'POST':
         keyword = request.form['keyword'].strip().lower()
         keyword_hmac = compute_hmac(keyword)
+
         log_action(session['user_id'], f"Searched keyword={keyword}")
 
+        # FIXED: exact HMAC match inside comma-separated HMAC list
         matched_records = MedicalRecord.query.filter(
-            MedicalRecord.keywords_hmac.like(f"%{keyword_hmac}%")
+            MedicalRecord.keywords_hmac.contains(keyword_hmac)
         ).all()
 
-    return render_template('search_record.html', records=matched_records, decrypt=fernet.decrypt)
+    return render_template(
+        'search_record.html',
+        records=matched_records,
+        decrypt=fernet.decrypt
+    )
 
 @app.route('/nurse')
 def nurse_dashboard():
