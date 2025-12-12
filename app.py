@@ -55,6 +55,18 @@ def compute_log_hash(user_id, record_id, action, timestamp):
     message = f"{user_id}|{record_id}|{action}|{timestamp_str}"
     return hmac.new(HMAC_KEY, message.encode(), hashlib.sha256).hexdigest()
 
+# Record Integrity Hash computation
+def compute_record_integrity(patient_id, doctor_id, nurse_id, enc_name, enc_symptoms, enc_diagnosis):
+    data_string = (
+        f"{patient_id}|{doctor_id}|{nurse_id}|"
+        f"{enc_name.hex()}|{enc_symptoms.hex()}|{enc_diagnosis.hex()}"
+    )
+    
+    return hmac.new(
+        HMAC_KEY,
+        data_string.encode(),
+        hashlib.sha256
+    ).hexdigest()
 
 # === DATABASE ===
 
@@ -77,11 +89,25 @@ class MedicalRecord(db.Model):
     doctor_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     nurse_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     keywords_hmac = db.Column(db.Text)
+
+    integrity_hash = db.Column(db.String(128))
     
     patient = db.relationship('User', foreign_keys=[patient_id], backref='patient_records')
     doctor = db.relationship('User', foreign_keys=[doctor_id], backref='doctor_records')
     nurse = db.relationship('User', foreign_keys=[nurse_id], backref='nurse_records')
 
+    def is_tampered(self):
+        current_hash = compute_record_integrity(
+            self.patient_id, 
+            self.doctor_id, 
+            self.nurse_id, 
+            self.name, 
+            self.symptoms, 
+            self.diagnosis
+        )
+        # Returns True if hashes DON'T match (Tampering detected)
+        return current_hash != self.integrity_hash
+    
     def __repr__(self):
         return f"<MedicalRecord id={self.id} patient_id={self.patient_id}>"
 
@@ -171,6 +197,11 @@ def doctor_dashboard():
         keyword_hmacs = [compute_hmac(k) for k in keyword_list]
         keyword_hmac_string = ",".join(keyword_hmacs)
 
+        integrity_val = compute_record_integrity(
+            patient_id, doctor_id, nurse_id, 
+            encrypted_name, encrypted_symptoms, encrypted_diagnosis
+        )
+
         # Create MedicalRecord
         record = MedicalRecord(
             patient_id=patient_id,
@@ -179,7 +210,8 @@ def doctor_dashboard():
             name=encrypted_name,
             symptoms=encrypted_symptoms,
             diagnosis=encrypted_diagnosis,
-            keywords_hmac=keyword_hmac_string
+            keywords_hmac=keyword_hmac_string,
+            integrity_hash=integrity_val
         )
 
         # Add to DB and commit
@@ -291,6 +323,15 @@ def update_record(id):
         if 'nurse_id' in request.form:
             record.nurse_id = int(request.form['nurse_id'])
 
+        record.integrity_hash = compute_record_integrity(
+            record.patient_id, 
+            record.doctor_id, 
+            record.nurse_id, 
+            record.name, 
+            record.symptoms, 
+            record.diagnosis
+        )
+        
         try:
             db.session.commit()
             log_action(session['user_id'], "Updated record", id)

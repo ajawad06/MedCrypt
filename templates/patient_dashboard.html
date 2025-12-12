@@ -1,5 +1,6 @@
-{% extends 'base.html' %} {% block head %}<title>My Medical Records</title>{%
-endblock %} {% block body %}
+{% extends 'base.html' %} {% block head %}
+<title>My Medical Records</title>
+{% endblock %} {% block body %}
 <div class="dashboard-container">
   <div class="logout">
     <a href="{{ url_for('logout') }}">Logout</a>
@@ -9,7 +10,7 @@ endblock %} {% block body %}
   {% if records|length < 1 %}
   <p>No records found.</p>
   {% else %}
-  <!-- Show the logged in patient's records -->
+
   <table class="record-table">
     <tr>
       <th>ID</th>
@@ -19,14 +20,24 @@ endblock %} {% block body %}
       <th>Nurse</th>
       <th>Doctor</th>
     </tr>
+
     {% for record in records %}
-    <tr>
+    <tr class="{{ 'tampered-row' if record.is_tampered() else '' }}">
       <td>{{ record.id }}</td>
+
+      {% if record.is_tampered() %}
+      <!-- TAMPERED: Apply warning class -->
+      <td colspan="5" class="tampered-warning">
+        ⚠️ SECURITY ALERT: RECORD TAMPERED
+      </td>
+      {% else %}
+      <!-- SAFE -->
       <td>{{ decrypt(record.name).decode() }}</td>
       <td>{{ decrypt(record.symptoms).decode() }}</td>
       <td>{{ decrypt(record.diagnosis).decode() }}</td>
       <td>{{ record.nurse.username }}</td>
       <td>{{ record.doctor.username }}</td>
+      {% endif %}
     </tr>
     {% endfor %}
   </table>

@@ -273,3 +273,16 @@ button:hover,
   background-color: #005fa3;
   transform: translateY(-2px);
 }
+
+/* Class for the whole row when tampered */
+.tampered-row {
+  background-color: #ffcccc;
+}
+
+/* Class for the warning text */
+.tampered-warning {
+  color: #d9534f;
+  font-weight: bold;
+  text-align: center;
+  vertical-align: middle;
+}

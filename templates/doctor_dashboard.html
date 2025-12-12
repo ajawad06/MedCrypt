@@ -103,6 +103,7 @@
   </form>
 
   <!-- 5. Records Table -->
+  <!-- 5. Records Table -->
   <table class="record-table">
     <tr>
       <th>ID</th>
@@ -114,16 +115,27 @@
     </tr>
 
     {% for record in records %}
-    <tr>
-      <td>{{ record.id }}</td>
-      <!-- <td>{{ record.patient.username }}</td> -->
 
-      <!-- Decrypt encrypted fields -->
+    <tr class="{{ 'tampered-row' if record.is_tampered() else '' }}">
+      <td>{{ record.id }}</td>
+
+      {% if record.is_tampered() %}
+
+      <!-- Warning Message -->
+      <td colspan="4" class="tampered-warning">
+        ⚠️ SECURITY ALERT: DATABASE RECORD HAS BEEN TAMPERED WITH ⚠️
+      </td>
+
+      {% else %}
+
+      <!-- Normal Data -->
       <td>{{ decrypt(record.name).decode() }}</td>
       <td>{{ decrypt(record.symptoms).decode() }}</td>
       <td>{{ decrypt(record.diagnosis).decode() }}</td>
-      <!-- Nurse name using Joins -->
       <td>{{ record.nurse.username }}</td>
+
+      {% endif %}
+
       <td>
         <a href="{{ url_for('delete_record', id=record.id) }}">Delete</a><br />
         <a href="{{ url_for('update_record', id=record.id) }}">Update</a>
