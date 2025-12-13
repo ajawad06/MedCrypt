@@ -6,6 +6,11 @@ from datetime import datetime,timezone
 from sqlalchemy.orm import aliased
 from config import FERNET_KEY, SECRET_KEY, DATABASE_URI, HMAC_KEY
 import hmac, hashlib
+import secrets
+
+def generate_dummy_hmacs(n=5):
+    """Generate n random dummy HMACs"""
+    return [compute_hmac(secrets.token_hex(16)) for _ in range(n)]
 
 # === FLASK APP BASIC CONFIGURATION ===
 
@@ -192,14 +197,22 @@ def doctor_dashboard():
         encrypted_symptoms = fernet.encrypt(symptoms.encode())
         encrypted_diagnosis = fernet.encrypt(diagnosis.encode())
 
-        # Hash keywords
+        
+        # Real keyword HMACs
         keyword_list = [k.strip().lower() for k in keywords.split(',')]
         keyword_hmacs = [compute_hmac(k) for k in keyword_list]
-        keyword_hmac_string = ",".join(keyword_hmacs)
 
+        # dummy HMACs
+        dummy_hmacs = generate_dummy_hmacs(n=5)  # you can change n
+        all_hmacs = keyword_hmacs + dummy_hmacs
+        keyword_hmac_string = ",".join(all_hmacs)
+
+        # Store in record
+        keyword_hmac_string = ",".join(all_hmacs)
+    
         integrity_val = compute_record_integrity(
-            patient_id, doctor_id, nurse_id, 
-            encrypted_name, encrypted_symptoms, encrypted_diagnosis
+        patient_id, doctor_id, nurse_id, 
+        encrypted_name, encrypted_symptoms, encrypted_diagnosis
         )
 
         # Create MedicalRecord
@@ -313,10 +326,19 @@ def update_record(id):
         record.symptoms = fernet.encrypt(symptoms.encode())
         record.diagnosis = fernet.encrypt(diagnosis.encode())
 
-        # Update keywords only if new ones provided
+        
         if keywords != "":
-            key_list = [k.strip().lower() for k in keywords.split(',') if k.strip()]
-            record.keywords_hmac = ",".join([compute_hmac(k) for k in key_list])
+           key_list = [k.strip().lower() for k in keywords.split(',') if k.strip()]
+           real_hmacs = [compute_hmac(k) for k in key_list]
+
+        # Add dummy HMACs for padding
+        dummy_hmacs = generate_dummy_hmacs(n=5)  # same n as record creation
+        all_hmacs = real_hmacs + dummy_hmacs
+
+        # Store combined HMACs in record
+        record.keywords_hmac = ",".join(all_hmacs)
+
+
 
         # Update patient_id and nurse_id if changed
         record.patient_id = patient_id
@@ -365,16 +387,24 @@ def search_record():
         keyword = request.form['keyword'].strip().lower()
         keyword_hmac = compute_hmac(keyword)
         log_action(session['user_id'], f"Searched keyword={keyword}")
-        # Add record with exact HMAC match inside comma-separated HMAC list
-        matched_records = MedicalRecord.query.filter(
-            MedicalRecord.keywords_hmac.contains(keyword_hmac)
-        ).all()
+
+    # Try to find records with matching HMAC
+    matched_records = []
+    for record in MedicalRecord.query.all():
+        hmacs = record.keywords_hmac.split(',')
+    if keyword_hmac in hmacs:
+        matched_records.append(record)
+
+    # If no match, return some random records (server stays “blind”)
+    if not matched_records:
+       matched_records = MedicalRecord.query.order_by(db.func.random()).limit(3).all()
+
          
     # iii. Display searched records
     return render_template(
-        'search_record.html',
-        records=matched_records,
-        decrypt=fernet.decrypt
+    'search_record.html',
+    records=matched_records,
+    decrypt=fernet.decrypt
     )
 
 # 2.1.F DR VIEW AUDIT LOGS
