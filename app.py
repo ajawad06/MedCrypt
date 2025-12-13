@@ -2,37 +2,63 @@ from flask import Flask, render_template, url_for, request, redirect, session
 from flask_sqlalchemy import SQLAlchemy
 from cryptography.fernet import Fernet
 from werkzeug.security import check_password_hash, generate_password_hash
-from datetime import datetime,timezone
-from sqlalchemy.orm import aliased
+from datetime import datetime, timezone
 from config import FERNET_KEY, SECRET_KEY, DATABASE_URI, HMAC_KEY
 import hmac, hashlib
-import secrets
-
-def generate_dummy_hmacs(n=5):
-    """Generate n random dummy HMACs"""
-    return [compute_hmac(secrets.token_hex(16)) for _ in range(n)]
+import random, string
 
 # === FLASK APP BASIC CONFIGURATION ===
 
 # 1. APP
-app=Flask(__name__)
+app = Flask(__name__)
 # 2. DB
 app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URI
-db=SQLAlchemy(app)
+db = SQLAlchemy(app)
 # 3. FERNET KEY
 fernet = Fernet(FERNET_KEY.encode())
 # 4. SESSION KEY
 app.secret_key = SECRET_KEY
 
+# Every record will effectively have this many keywords in the DB to hide the volume of real data.
+FIXED_KEYWORD_COUNT = 10 
+
 # === IMP FUNCTIONS === 
 
-# Hmac Function
+# Hmac Function (Generation of Search Tokens)
 def compute_hmac(keyword):
     return hmac.new(
         HMAC_KEY,
         keyword.encode(),
         hashlib.sha256
     ).hexdigest()
+
+# Generates Dummy Keyword
+def generate_dummy_keyword(length=8):
+    # Generates n random dummy keywrd
+    return ''.join(random.choices(string.ascii_lowercase, k=length))
+
+# Make sure each record has equal no.of keywords to control volume n freq analysis
+def compute_keywords(user_keywords_str):
+    # 1. Process Real Keywords
+    if not user_keywords_str:
+        real_keywords = []
+    else:
+        real_keywords = [k.strip().lower() for k in user_keywords_str.split(',') if k.strip()]
+
+    # 2. Generate HMACs for Real Keywords
+    hmac_list = [compute_hmac(k) for k in real_keywords]
+
+    # 3. Pad with Dummy Keywords if we have space
+    while len(hmac_list) < FIXED_KEYWORD_COUNT:
+        dummy_word = generate_dummy_keyword()
+        dummy_hmac = compute_hmac(dummy_word)
+        hmac_list.append(dummy_hmac)
+
+    # 4. Shuffle to hide position
+    # This prevents Frequency Analysis on the "first" keyword
+    random.shuffle(hmac_list)
+    # 5. Join into string for DB storage
+    return ",".join(hmac_list)
 
 # Logging Actions Function
 def log_action(user_id, action, record_id=None):
@@ -49,10 +75,8 @@ def log_action(user_id, action, record_id=None):
     db.session.add(log)
     db.session.commit()
 
-
-# Compute tamper-evident hash
+# Compute tamper-evident hash (Audit Log Integrity)
 def compute_log_hash(user_id, record_id, action, timestamp):
-    # Ensure timestamp has no microseconds and is UTC
     if timestamp.tzinfo is None:
         timestamp = timestamp.replace(tzinfo=timezone.utc)
     timestamp = timestamp.replace(microsecond=0)
@@ -60,11 +84,12 @@ def compute_log_hash(user_id, record_id, action, timestamp):
     message = f"{user_id}|{record_id}|{action}|{timestamp_str}"
     return hmac.new(HMAC_KEY, message.encode(), hashlib.sha256).hexdigest()
 
-# Record Integrity Hash computation
-def compute_record_integrity(patient_id, doctor_id, nurse_id, enc_name, enc_symptoms, enc_diagnosis):
+# Record Integrity Hash computation (Data Integrity)
+def compute_record_integrity(patient_id, doctor_id, nurse_id, enc_name, enc_symptoms, enc_diagnosis, keywords_hmac):
     data_string = (
         f"{patient_id}|{doctor_id}|{nurse_id}|"
-        f"{enc_name.hex()}|{enc_symptoms.hex()}|{enc_diagnosis.hex()}"
+        f"{enc_name.hex()}|{enc_symptoms.hex()}|{enc_diagnosis.hex()}|"
+        f"{keywords_hmac}"
     )
     
     return hmac.new(
@@ -93,7 +118,7 @@ class MedicalRecord(db.Model):
     diagnosis = db.Column(db.LargeBinary)
     doctor_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     nurse_id = db.Column(db.Integer, db.ForeignKey('user.id'))
-    keywords_hmac = db.Column(db.Text)
+    keywords_hmac = db.Column(db.Text) # Stores Mixed Real + Dummy Hashes
 
     integrity_hash = db.Column(db.String(128))
     
@@ -108,9 +133,9 @@ class MedicalRecord(db.Model):
             self.nurse_id, 
             self.name, 
             self.symptoms, 
-            self.diagnosis
+            self.diagnosis,
+            self.keywords_hmac # Include keywords in check
         )
-        # Returns True if hashes DON'T match (Tampering detected)
         return current_hash != self.integrity_hash
     
     def __repr__(self):
@@ -124,7 +149,7 @@ class AuditLog(db.Model):
     action = db.Column(db.String(255))
     timestamp = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(microsecond=0))
     ip_address = db.Column(db.String(50))
-    log_hash = db.Column(db.String(128))  # Tamper-evident hash
+    log_hash = db.Column(db.String(128))
 
     def __repr__(self):
         return f"<AuditLog {self.user_id} - {self.action}>"
@@ -139,15 +164,12 @@ def login():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
-        # i. Fetch this user from db
         user = User.query.filter_by(username=username).first()
-        # ii. If user exists and pass hash matches, then login
         if user and check_password_hash(user.password_hash, password):
             session['user_id'] = user.id
             session['role'] = user.role
             log_action(user.id, "Login successful")
             return redirect(url_for('dashboard'))
-        # iii. Else login error message
         else:
             log_action(None, f"Failed login for username={username}")
             return render_template('login.html', error="Invalid username or password")
@@ -185,34 +207,26 @@ def doctor_dashboard():
         nurse_id = int(request.form['nurse_id'])
         symptoms = request.form['symptoms']
         diagnosis = request.form['diagnosis']
-        keywords = request.form['keywords']
+        keywords_raw = request.form['keywords']
 
-        # Get the patient object via relationship
+        # Get the patient object
         patient = User.query.get(patient_id)
         if not patient or patient.role != 'patient':
             return "Invalid patient selected", 400
 
         # Encrypt fields
-        encrypted_name = fernet.encrypt(patient.username.encode())  # patient name from User table
+        encrypted_name = fernet.encrypt(patient.username.encode())
         encrypted_symptoms = fernet.encrypt(symptoms.encode())
         encrypted_diagnosis = fernet.encrypt(diagnosis.encode())
 
-        
-        # Real keyword HMACs
-        keyword_list = [k.strip().lower() for k in keywords.split(',')]
-        keyword_hmacs = [compute_hmac(k) for k in keyword_list]
+        # Mix real keywords with dummy keywords
+        keyword_hmac_string = compute_keywords(keywords_raw)
 
-        # dummy HMACs
-        dummy_hmacs = generate_dummy_hmacs(n=5)  # you can change n
-        all_hmacs = keyword_hmacs + dummy_hmacs
-        keyword_hmac_string = ",".join(all_hmacs)
-
-        # Store in record
-        keyword_hmac_string = ",".join(all_hmacs)
-    
+        # Compute Integrity 
         integrity_val = compute_record_integrity(
-        patient_id, doctor_id, nurse_id, 
-        encrypted_name, encrypted_symptoms, encrypted_diagnosis
+            patient_id, doctor_id, nurse_id, 
+            encrypted_name, encrypted_symptoms, encrypted_diagnosis,
+            keyword_hmac_string
         )
 
         # Create MedicalRecord
@@ -227,15 +241,13 @@ def doctor_dashboard():
             integrity_hash=integrity_val
         )
 
-        # Add to DB and commit
         db.session.add(record)
         db.session.commit()
 
-        # Log creation
         log_action(doctor_id, "Created medical record", record.id)
         return redirect(url_for('doctor_dashboard'))
     
-    # iv. Overall, display the two tables patients and records 
+    # iv. Display tables
     patients = User.query.filter_by(role='patient').all() 
     nurses = User.query.filter_by(role='nurse').all() 
     records = MedicalRecord.query.all() 
@@ -245,38 +257,32 @@ def doctor_dashboard():
 # 2.1.A. DR ADDS PATIENT
 @app.route('/register_patient', methods=['POST'])
 def register_patient():
-    # i. Verify doctor
     if session.get('role') != 'doctor':
         return "Access Denied", 403
 
-    # ii. Get name and password
     username = request.form['username']
     password = request.form['password']
-    # iii. Check if username already exists
+    
     if User.query.filter_by(username=username).first():
         return redirect(url_for('doctor_dashboard', error="Username already exists"))
-    # iv. Generate hash for password and add patient to DB
+    
     hashed_pw = generate_password_hash(password)
     new_patient = User(username=username, password_hash=hashed_pw, role='patient')
     db.session.add(new_patient)
     db.session.commit()
-    # v. Log Action
     log_action(session['user_id'], f"Registered patient username={username}")
     return redirect(url_for('doctor_dashboard'))
 
 #2.1.B. DR REMOVES PATIENT
 @app.route('/remove_patient/<int:id>')
 def remove_patient(id):
-    # i. Verify Doctor
     if session.get('role') != 'doctor':
         return "Access Denied", 403
 
-    # ii. Get that patient using DB table
     patient = User.query.get_or_404(id)
     if patient.role != 'patient':
         return "Only patients can be removed.", 400
 
-    # iii. Remove patient
     try:
         MedicalRecord.query.filter_by(patient_id=patient.id).delete()
         db.session.delete(patient)
@@ -289,9 +295,7 @@ def remove_patient(id):
 # 2.1.C. DR DELETES RECORD
 @app.route('/delete_record/<int:id>')
 def delete_record(id):
-    # i. Get that record using DB table
     record_to_delete=MedicalRecord.query.get_or_404(id)
-    # ii. Delete record
     try:
         db.session.delete(record_to_delete)
         db.session.commit()
@@ -300,58 +304,46 @@ def delete_record(id):
     except: 
         return "There was a problem deleting this record"
 
+# 2.1.D. DR UPDATES RECORD
 @app.route('/update_record/<int:id>', methods=['GET', 'POST'])
 def update_record(id):
-    # i. Verify doctor
     if session.get('role') != 'doctor':
         return "Access Denied", 403
 
-    # ii. Get the record from DB
     record = MedicalRecord.query.get_or_404(id)
 
-    # iii. Fetch updated details from form
     if request.method == 'POST':
         patient_id = int(request.form['patient_id'])
         symptoms = request.form['symptoms']
         diagnosis = request.form['diagnosis']
-        keywords = request.form.get('keywords', '').strip()
+        keywords_raw = request.form.get('keywords', '').strip()
 
-        # Fetch patient object
         patient = User.query.get(patient_id)
         if not patient or patient.role != 'patient':
             return "Invalid patient selected", 400
 
         # Encrypt updated fields
-        record.name = fernet.encrypt(patient.username.encode())  # patient name from User table
+        record.name = fernet.encrypt(patient.username.encode())
         record.symptoms = fernet.encrypt(symptoms.encode())
         record.diagnosis = fernet.encrypt(diagnosis.encode())
 
-        
-        if keywords != "":
-           key_list = [k.strip().lower() for k in keywords.split(',') if k.strip()]
-           real_hmacs = [compute_hmac(k) for k in key_list]
+        if keywords_raw != "":
+             record.keywords_hmac = compute_keywords(keywords_raw)
 
-        # Add dummy HMACs for padding
-        dummy_hmacs = generate_dummy_hmacs(n=5)  # same n as record creation
-        all_hmacs = real_hmacs + dummy_hmacs
-
-        # Store combined HMACs in record
-        record.keywords_hmac = ",".join(all_hmacs)
-
-
-
-        # Update patient_id and nurse_id if changed
+        # Update IDs
         record.patient_id = patient_id
         if 'nurse_id' in request.form:
             record.nurse_id = int(request.form['nurse_id'])
 
+        # Re-compute integrity hash
         record.integrity_hash = compute_record_integrity(
             record.patient_id, 
             record.doctor_id, 
             record.nurse_id, 
             record.name, 
             record.symptoms, 
-            record.diagnosis
+            record.diagnosis,
+            record.keywords_hmac 
         )
         
         try:
@@ -361,9 +353,8 @@ def update_record(id):
         except Exception as e:
             return f"There was a problem updating this record: {e}"
 
-    # GET request: fetch all patients to populate dropdown
     patients = User.query.filter_by(role='patient').all()
-    nurses = User.query.filter_by(role='nurse').all()  # optional: if you allow nurse reassignment
+    nurses = User.query.filter_by(role='nurse').all()
     return render_template(
         'update_record.html',
         record=record,
@@ -373,38 +364,33 @@ def update_record(id):
     )
 
 
-# 2.1.E DR SEARCHES RECORD
+# 2.1.E DR SEARCHES RECORD (SSE SEARCH)
 @app.route('/search_record', methods=['GET', 'POST'])
 def search_record():
-    # i. Verify doctor
     if session.get('role') != 'doctor':
         log_action(session.get('user_id'), "Unauthorized doctor panel access attempt")
         return "Access Denied", 403
     
     matched_records = []
-    # ii. Fetch those rows that match the entered search word
     if request.method == 'POST':
+        # 1. User inputs a keyword
         keyword = request.form['keyword'].strip().lower()
-        keyword_hmac = compute_hmac(keyword)
+        
+        # 2. Generate the Search Token (HMAC)
+        search_token = compute_hmac(keyword)
+        
         log_action(session['user_id'], f"Searched keyword={keyword}")
-
-    # Try to find records with matching HMAC
-    matched_records = []
-    for record in MedicalRecord.query.all():
-        hmacs = record.keywords_hmac.split(',')
-    if keyword_hmac in hmacs:
-        matched_records.append(record)
-
-    # If no match, return some random records (server stays “blind”)
-    if not matched_records:
-       matched_records = MedicalRecord.query.order_by(db.func.random()).limit(3).all()
-
+        
+        # 3. Perform SSE Search
+        # This matches the token against the mixed string stored in DB
+        matched_records = MedicalRecord.query.filter(
+            MedicalRecord.keywords_hmac.contains(search_token)
+        ).all()
          
-    # iii. Display searched records
     return render_template(
-    'search_record.html',
-    records=matched_records,
-    decrypt=fernet.decrypt
+        'search_record.html',
+        records=matched_records,
+        decrypt=fernet.decrypt
     )
 
 # 2.1.F DR VIEW AUDIT LOGS
@@ -427,12 +413,10 @@ def verify_logs():
 # 2.2 PATIENT DASHBOARD
 @app.route('/patient')
 def patient_dashboard():
-    # i. Verify role
     if session.get('role') != 'patient':
         return "Access Denied", 403
-    # ii. Log Action
     log_action(session['user_id'], "Accessed patient dashboard")
-    # iii. Display logged in patient's records
+    
     patient_id = session.get('user_id')
     records = MedicalRecord.query.filter_by(patient_id=patient_id).all()
     return render_template('patient_dashboard.html', records=records, decrypt=fernet.decrypt)
@@ -441,13 +425,10 @@ def patient_dashboard():
 # 2.3 NURSE DASHBOARD
 @app.route('/nurse')
 def nurse_dashboard():
-    # i. Verify role
     if session.get('role') != 'nurse':
         return "Access Denied", 403
-    # ii. Log action
     log_action(session['user_id'], "Accessed nurse dashboard")
 
-    # iii. Fetch only records assigned to this nurse
     nurse_id = session.get('user_id')
     records = MedicalRecord.query.filter_by(nurse_id=nurse_id).all()
     return render_template(
@@ -462,20 +443,8 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
-@app.route('/debug_hmac')
-def debug_hmac():
-    records = MedicalRecord.query.all()
-    html = "<h2>HMAC Tokens</h2>"
-    for r in records:
-        html += f"<p>Record {r.id}: {r.keywords_hmac}</p>"
-    return html
-
-
-
-
 if __name__=="__main__":
     app.run(debug=True)
-
 
 ## --- WORK LEFT ---
 
@@ -483,8 +452,8 @@ if __name__=="__main__":
 # 2. Nurse or Dr IDs ki jgh onke names dikhany in html tables using SQL JOINS statements ✔️
 # 3. Use HMAC instead of SHA256 everywhere => concept of SSE used i.e. search tokens using HMAC ✔️
 # 4. Audit Logs - Detail Below ✔️
-# 5. Record Integrity Hashing - Detail Below
-# 6. Dummy Keywords - Detail Below
+# 5. Record Integrity Hashing - Detail Below ✔️
+# 6. Dummy Keywords - Detail Below - MARYAM ...
 
 
 

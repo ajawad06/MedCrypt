@@ -43,4 +43,4 @@ with app.app_context():
         ))
 
     db.session.commit()
-    print("Database reset and users seeded.")
+    print("Database created and users seeded.")
