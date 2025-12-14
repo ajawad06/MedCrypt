@@ -32,7 +32,11 @@
           <tr class="{{ 'tampered-row' if r.is_tampered() else '' }}">
             {% if r.is_tampered() %}
             <!-- TAMPERED: Apply warning class -->
-            <td colspan="3" class="tampered-warning">
+            <td
+              colspan="3"
+              class="tampered-warning"
+              style="background-color: #ffcccc"
+            >
               ⚠️ SECURITY ALERT: RECORD TAMPERED
             </td>
             {% else %}

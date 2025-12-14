@@ -274,9 +274,12 @@ button:hover,
   transform: translateY(-2px);
 }
 
-/* Class for the whole row when tampered */
 .tampered-row {
-  background-color: #ffcccc;
+  background-color: #ffcccc !important;
+}
+
+.tampered-row td {
+  background-color: #ffcccc; /* makes it work for tables with striping */
 }
 
 /* Class for the warning text */
