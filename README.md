@@ -2,6 +2,8 @@
 
 **Searchable Encryption on Medical Records** is a secure EHR platform that allows encrypted medical records to be searched without decryption. It uses Searchable Symmetric Encryption (SSE) with HMAC tokens and dummy keyword padding to protect patient data while enabling secure search.
 
+> **Course:** Information Security
+
 ---
 
 ## 🚀 Key Features
