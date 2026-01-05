@@ -1,6 +1,6 @@
 # 🔒 MedCrypt
 
-The **Searchable Encryption on Medical Records** system is a secure Electronic Health Record (EHR) platform designed to resolve the conflict between data privacy and searchability. Traditional encrypted databases require decryption for searching, which exposes sensitive data. This project implements **Searchable Symmetric Encryption (SSE)** using HMAC tokens and dummy keyword padding to allow secure searching while keeping Patient Health Information (PHI) encrypted at rest.
+**Searchable Encryption on Medical Records** is a secure EHR platform that allows encrypted medical records to be searched without decryption. It uses Searchable Symmetric Encryption (SSE) with HMAC tokens and dummy keyword padding to protect patient data while enabling secure search.
 
 ---
 
