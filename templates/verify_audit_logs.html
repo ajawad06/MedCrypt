@@ -1,28 +1,52 @@
-{% extends 'base.html' %} {% block head %}
-<title>Verify Audit Logs</title>
-{% endblock %} {% block body %}
+{% extends 'base.html' %}
+{% block title %}Verify Logs · MedCrypt{% endblock %}
+{% block body %}
 <div class="dashboard-container">
-  <h2>Audit Log Verification</h2>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div class="brand-text"><strong>MedCrypt</strong><span>Secure Records</span></div>
+    </div>
+    <nav class="topbar-actions">
+      <a class="btn btn-ghost" href="{{ url_for('audit_logs') }}">Audit Logs</a>
+      <a class="btn btn-ghost" href="{{ url_for('doctor_dashboard') }}">Back to dashboard</a>
+      <a class="btn btn-secondary btn-sm" href="{{ url_for('logout') }}">Logout</a>
+    </nav>
+  </header>
 
-  {% if results|length < 1 %}
-  <p>No logs found.</p>
-  {% else %}
-  <table class="record-table">
-    <tr>
-      <th>Log ID</th>
-      <th>Status</th>
-    </tr>
-    {% for result in results %}
-    <tr>
-      <td>{{ result.id }}</td>
-      {% if result.ok %}
-      <td style="color: green; font-weight: bold">✅ OK</td>
-      {% else %}
-      <td style="color: red; font-weight: bold">❌ TAMPERED</td>
-      {% endif %}
-    </tr>
-    {% endfor %}
-  </table>
-  {% endif %}
+  <div class="page-head">
+    <span class="eyebrow">Integrity check</span>
+    <h2>Audit Log Verification</h2>
+    <p>Each log's stored hash is recomputed and compared to detect tampering.</p>
+  </div>
+
+  <section class="card">
+    <div class="card-head"><h3>Results</h3></div>
+    {% if results|length < 1 %}
+    <div class="empty-state"><strong>No logs to verify</strong>There are no audit entries yet.</div>
+    {% else %}
+    <div class="table-wrap">
+      <table class="record-table">
+        <thead>
+          <tr><th>Log ID</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          {% for result in results %}
+          <tr>
+            <td class="id">{{ result.id }}</td>
+            <td>
+              {% if result.ok %}
+              <span class="badge badge-ok">Verified</span>
+              {% else %}
+              <span class="badge badge-danger">Tampered</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </section>
 </div>
 {% endblock %}

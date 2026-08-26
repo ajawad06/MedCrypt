@@ -4,8 +4,7 @@ from cryptography.fernet import Fernet
 from werkzeug.security import check_password_hash, generate_password_hash
 from datetime import datetime, timezone
 from config import FERNET_KEY, SECRET_KEY, DATABASE_URI, HMAC_KEY
-import hmac, hashlib
-import random, string
+import hmac, hashlib, base64
 
 # === FLASK APP BASIC CONFIGURATION ===
 
@@ -19,46 +18,111 @@ fernet = Fernet(FERNET_KEY.encode())
 # 4. SESSION KEY
 app.secret_key = SECRET_KEY
 
-# Every record will effectively have this many keywords in the DB to hide the volume of real data.
-FIXED_KEYWORD_COUNT = 10 
+# === SEARCHABLE SYMMETRIC ENCRYPTION (SSE) ===
+#
+# Encrypted inverted-index construction (Curtmola et al., SSE-1 style).
+#
+# Instead of storing every keyword-token of a record together in one blob
+# (which leaks the co-occurrence structure of each document), the index is a
+# flat table of (label, value) rows where:
+#
+#   trapdoor t  = PRF_K(w)                 secret token for keyword w
+#   label       = PRF_t(counter)           pseudorandom, UNLINKABLE per entry
+#   value       = Enc_t(record_id)         encrypted document id
+#
+# Because both the label and the value are keyed by the per-keyword trapdoor,
+# the server cannot tell which entries share a keyword or a document until a
+# search reveals it. To search for w the client hands over only t; the server
+# walks counters 0,1,2,... until a label is missing, decrypting the matching
+# record ids as it goes. Search cost is O(#matches), not a full table scan.
+#
+# Known/accepted leakage (inherent to efficient SSE): search access pattern
+# and result size once a query is issued. Hiding those needs ORAM-class
+# machinery, which is out of scope for this system.
 
-# === IMP FUNCTIONS === 
+def _keyword_list(raw):
+    # Normalise a comma-separated user string into clean, deduped keywords.
+    if not raw:
+        return []
+    seen, out = set(), []
+    for k in raw.split(','):
+        k = k.strip().lower()
+        if k and k not in seen:
+            seen.add(k)
+            out.append(k)
+    return out
 
-# Hmac Function (Generation of Search Tokens)
-def compute_hmac(keyword):
-    return hmac.new(
-        HMAC_KEY,
-        keyword.encode(),
-        hashlib.sha256
-    ).hexdigest()
+def sse_trapdoor(keyword):
+    # PRF_K(w): the per-keyword secret token. Requires the master HMAC key.
+    return hmac.new(HMAC_KEY, keyword.strip().lower().encode(), hashlib.sha256).hexdigest()
 
-# Generates Dummy Keyword
-def generate_dummy_keyword(length=8):
-    # Generates n random dummy keywrd
-    return ''.join(random.choices(string.ascii_lowercase, k=length))
+def sse_label(trapdoor, counter):
+    # PRF_t(counter): pseudorandom label, unlinkable across keywords/records.
+    return hmac.new(trapdoor.encode(), f"label|{counter}".encode(), hashlib.sha256).hexdigest()
 
-# Make sure each record has equal no.of keywords to control volume n freq analysis
-def compute_keywords(user_keywords_str):
-    # 1. Process Real Keywords
-    if not user_keywords_str:
-        real_keywords = []
-    else:
-        real_keywords = [k.strip().lower() for k in user_keywords_str.split(',') if k.strip()]
+def sse_cipher(trapdoor):
+    # Fernet instance keyed by the trapdoor, used to encrypt/decrypt record ids.
+    key = hashlib.sha256((trapdoor + "|value").encode()).digest()  # 32 bytes
+    return Fernet(base64.urlsafe_b64encode(key))
 
-    # 2. Generate HMACs for Real Keywords
-    hmac_list = [compute_hmac(k) for k in real_keywords]
+def sse_add_entry(trapdoor, record_id):
+    # Append record_id to keyword's counter sequence at the next free slot.
+    c = 0
+    while SearchIndex.query.filter_by(label=sse_label(trapdoor, c)).first() is not None:
+        c += 1
+    db.session.add(SearchIndex(
+        label=sse_label(trapdoor, c),
+        value=sse_cipher(trapdoor).encrypt(str(record_id).encode())
+    ))
 
-    # 3. Pad with Dummy Keywords if we have space
-    while len(hmac_list) < FIXED_KEYWORD_COUNT:
-        dummy_word = generate_dummy_keyword()
-        dummy_hmac = compute_hmac(dummy_word)
-        hmac_list.append(dummy_hmac)
+def sse_remove_entry(trapdoor, record_id):
+    # Drop record_id from a keyword's sequence and rewrite it contiguously so
+    # the stop-at-gap search stays correct after deletions.
+    cipher = sse_cipher(trapdoor)
+    remaining = []
+    c = 0
+    while True:
+        entry = SearchIndex.query.filter_by(label=sse_label(trapdoor, c)).first()
+        if entry is None:
+            break
+        rid = int(cipher.decrypt(entry.value).decode())
+        if rid != record_id:
+            remaining.append(rid)
+        db.session.delete(entry)
+        c += 1
+    db.session.flush()  # apply deletes before reusing labels
+    for i, rid in enumerate(remaining):
+        db.session.add(SearchIndex(
+            label=sse_label(trapdoor, i),
+            value=cipher.encrypt(str(rid).encode())
+        ))
 
-    # 4. Shuffle to hide position
-    # This prevents Frequency Analysis on the "first" keyword
-    random.shuffle(hmac_list)
-    # 5. Join into string for DB storage
-    return ",".join(hmac_list)
+def sse_index_record(record_id, keywords):
+    for w in keywords:
+        sse_add_entry(sse_trapdoor(w), record_id)
+
+def sse_deindex_record(record_id, keywords):
+    for w in keywords:
+        sse_remove_entry(sse_trapdoor(w), record_id)
+
+def sse_search(keyword):
+    # Return the list of record ids indexed under keyword.
+    t = sse_trapdoor(keyword)
+    cipher = sse_cipher(t)
+    ids, c = [], 0
+    while True:
+        entry = SearchIndex.query.filter_by(label=sse_label(t, c)).first()
+        if entry is None:
+            break
+        ids.append(int(cipher.decrypt(entry.value).decode()))
+        c += 1
+    return ids
+
+def get_record_keywords(record):
+    # Decrypt the record's stored keyword set (needed to re-index on edit/delete).
+    if not record.enc_keywords:
+        return []
+    return _keyword_list(fernet.decrypt(record.enc_keywords).decode())
 
 # Logging Actions Function
 def log_action(user_id, action, record_id=None):
@@ -85,11 +149,11 @@ def compute_log_hash(user_id, record_id, action, timestamp):
     return hmac.new(HMAC_KEY, message.encode(), hashlib.sha256).hexdigest()
 
 # Record Integrity Hash computation (Data Integrity)
-def compute_record_integrity(patient_id, doctor_id, nurse_id, enc_name, enc_symptoms, enc_diagnosis, keywords_hmac):
+def compute_record_integrity(patient_id, doctor_id, nurse_id, enc_name, enc_symptoms, enc_diagnosis, enc_keywords):
     data_string = (
         f"{patient_id}|{doctor_id}|{nurse_id}|"
         f"{enc_name.hex()}|{enc_symptoms.hex()}|{enc_diagnosis.hex()}|"
-        f"{keywords_hmac}"
+        f"{enc_keywords.hex() if enc_keywords else ''}"
     )
     
     return hmac.new(
@@ -118,7 +182,7 @@ class MedicalRecord(db.Model):
     diagnosis = db.Column(db.LargeBinary)
     doctor_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     nurse_id = db.Column(db.Integer, db.ForeignKey('user.id'))
-    keywords_hmac = db.Column(db.Text) # Stores Mixed Real + Dummy Hashes
+    enc_keywords = db.Column(db.LargeBinary)  # Fernet-encrypted keyword set (for re-indexing on edit/delete)
 
     integrity_hash = db.Column(db.String(128))
     
@@ -132,14 +196,23 @@ class MedicalRecord(db.Model):
             self.doctor_id, 
             self.nurse_id, 
             self.name, 
-            self.symptoms, 
+            self.symptoms,
             self.diagnosis,
-            self.keywords_hmac # Include keywords in check
+            self.enc_keywords  # Include keyword set in check
         )
         return current_hash != self.integrity_hash
-    
+
     def __repr__(self):
         return f"<MedicalRecord id={self.id} patient_id={self.patient_id}>"
+
+# ENCRYPTED SEARCH INDEX TABLE IN DB (the SSE inverted index)
+class SearchIndex(db.Model):
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    label = db.Column(db.String(64), unique=True, index=True)  # pseudorandom PRF_t(counter)
+    value = db.Column(db.LargeBinary)                          # Enc_t(record_id)
+
+    def __repr__(self):
+        return f"<SearchIndex {self.label[:8]}...>"
 
 # AUDIT LOG TABLES IN DB
 class AuditLog(db.Model):
@@ -175,6 +248,31 @@ def login():
             return render_template('login.html', error="Invalid username or password")
 
     return render_template('login.html')
+
+
+# 1.1 PATIENT SELF-REGISTRATION (public sign-up)
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form['username'].strip()
+        password = request.form['password']
+
+        if not username or not password:
+            return render_template('register.html', error="Username and password are required")
+
+        if User.query.filter_by(username=username).first():
+            return render_template('register.html', error="That username is already taken")
+
+        db.session.add(User(
+            username=username,
+            password_hash=generate_password_hash(password),
+            role='patient'
+        ))
+        db.session.commit()
+        log_action(None, f"Self-registered patient username={username}")
+        return render_template('login.html', notice="Account created — please sign in.")
+
+    return render_template('register.html')
 
 
 # 2. DISPLAY DASHBOARD FOR CURRENT USER
@@ -219,14 +317,15 @@ def doctor_dashboard():
         encrypted_symptoms = fernet.encrypt(symptoms.encode())
         encrypted_diagnosis = fernet.encrypt(diagnosis.encode())
 
-        # Mix real keywords with dummy keywords
-        keyword_hmac_string = compute_keywords(keywords_raw)
+        # Encrypt the keyword set so it can be re-indexed later on edit/delete
+        keywords = _keyword_list(keywords_raw)
+        encrypted_keywords = fernet.encrypt(",".join(keywords).encode())
 
-        # Compute Integrity 
+        # Compute Integrity
         integrity_val = compute_record_integrity(
-            patient_id, doctor_id, nurse_id, 
+            patient_id, doctor_id, nurse_id,
             encrypted_name, encrypted_symptoms, encrypted_diagnosis,
-            keyword_hmac_string
+            encrypted_keywords
         )
 
         # Create MedicalRecord
@@ -237,11 +336,15 @@ def doctor_dashboard():
             name=encrypted_name,
             symptoms=encrypted_symptoms,
             diagnosis=encrypted_diagnosis,
-            keywords_hmac=keyword_hmac_string,
+            enc_keywords=encrypted_keywords,
             integrity_hash=integrity_val
         )
 
         db.session.add(record)
+        db.session.commit()  # commit first so record.id exists
+
+        # Add the record's keywords to the encrypted search index
+        sse_index_record(record.id, keywords)
         db.session.commit()
 
         log_action(doctor_id, "Created medical record", record.id)
@@ -284,25 +387,38 @@ def remove_patient(id):
         return "Only patients can be removed.", 400
 
     try:
-        MedicalRecord.query.filter_by(patient_id=patient.id).delete()
+        # De-index then delete each of the patient's records
+        for rec in MedicalRecord.query.filter_by(patient_id=patient.id).all():
+            sse_deindex_record(rec.id, get_record_keywords(rec))
+            db.session.delete(rec)
         db.session.delete(patient)
         db.session.commit()
         log_action(session['user_id'], f"Removed patient_id={id}")
         return redirect(url_for('doctor_dashboard'))
-    except:
-        return redirect(url_for('doctor_dashboard'))
+    except Exception:
+        # Roll back so a partial de-index/delete never leaves the index inconsistent
+        db.session.rollback()
+        return redirect(url_for('doctor_dashboard', error="Could not remove that patient."))
 
 # 2.1.C. DR DELETES RECORD
 @app.route('/delete_record/<int:id>')
 def delete_record(id):
+    if session.get('role') != 'doctor':
+        log_action(session.get('user_id'), f"Unauthorized delete attempt on record_id={id}")
+        return "Access Denied", 403
+
     record_to_delete=MedicalRecord.query.get_or_404(id)
     try:
+        # Remove this record's entries from the encrypted search index first
+        sse_deindex_record(record_to_delete.id, get_record_keywords(record_to_delete))
         db.session.delete(record_to_delete)
         db.session.commit()
         log_action(session['user_id'], "Deleted record", id)
         return redirect("/doctor")
-    except: 
-        return "There was a problem deleting this record"
+    except Exception:
+        # Roll back so a partial de-index never leaves the index inconsistent
+        db.session.rollback()
+        return redirect(url_for('doctor_dashboard', error="There was a problem deleting this record."))
 
 # 2.1.D. DR UPDATES RECORD
 @app.route('/update_record/<int:id>', methods=['GET', 'POST'])
@@ -327,8 +443,15 @@ def update_record(id):
         record.symptoms = fernet.encrypt(symptoms.encode())
         record.diagnosis = fernet.encrypt(diagnosis.encode())
 
+        # Re-index the search index only if the keyword set actually changed.
+        # An empty keywords field means "keep existing keywords".
         if keywords_raw != "":
-             record.keywords_hmac = compute_keywords(keywords_raw)
+            old_keywords = get_record_keywords(record)
+            new_keywords = _keyword_list(keywords_raw)
+            if new_keywords != old_keywords:
+                sse_deindex_record(record.id, old_keywords)
+                sse_index_record(record.id, new_keywords)
+                record.enc_keywords = fernet.encrypt(",".join(new_keywords).encode())
 
         # Update IDs
         record.patient_id = patient_id
@@ -337,15 +460,15 @@ def update_record(id):
 
         # Re-compute integrity hash
         record.integrity_hash = compute_record_integrity(
-            record.patient_id, 
-            record.doctor_id, 
-            record.nurse_id, 
-            record.name, 
-            record.symptoms, 
+            record.patient_id,
+            record.doctor_id,
+            record.nurse_id,
+            record.name,
+            record.symptoms,
             record.diagnosis,
-            record.keywords_hmac 
+            record.enc_keywords
         )
-        
+
         try:
             db.session.commit()
             log_action(session['user_id'], "Updated record", id)
@@ -375,18 +498,18 @@ def search_record():
     if request.method == 'POST':
         # 1. User inputs a keyword
         keyword = request.form['keyword'].strip().lower()
-        
-        # 2. Generate the Search Token (HMAC)
-        search_token = compute_hmac(keyword)
-        
+
         log_action(session['user_id'], f"Searched keyword={keyword}")
-        
-        # 3. Perform SSE Search
-        # This matches the token against the mixed string stored in DB
-        matched_records = MedicalRecord.query.filter(
-            MedicalRecord.keywords_hmac.contains(search_token)
-        ).all()
-         
+
+        # 2. SSE search: derive the trapdoor and walk the encrypted inverted
+        #    index to recover the matching record ids (no table scan).
+        if keyword:
+            matched_ids = sse_search(keyword)
+            if matched_ids:
+                matched_records = MedicalRecord.query.filter(
+                    MedicalRecord.id.in_(matched_ids)
+                ).all()
+
     return render_template(
         'search_record.html',
         records=matched_records,
@@ -396,12 +519,20 @@ def search_record():
 # 2.1.F DR VIEW AUDIT LOGS
 @app.route('/audit_logs')
 def audit_logs():
+    if session.get('role') != 'doctor':
+        log_action(session.get('user_id'), "Unauthorized audit log access attempt")
+        return "Access Denied", 403
+
     logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).all()
     return render_template('audit_logs.html', logs=logs)
 
 # 2.1.G DR VERIFIES AUDIT LOGS
 @app.route('/verify_audit_logs')
 def verify_logs():
+    if session.get('role') != 'doctor':
+        log_action(session.get('user_id'), "Unauthorized audit verification attempt")
+        return "Access Denied", 403
+
     logs = AuditLog.query.all()
     results = [
         {"id": log.id, "ok": compute_log_hash(log.user_id, log.record_id, log.action, log.timestamp) == log.log_hash}
@@ -444,7 +575,10 @@ def logout():
     return redirect(url_for('login'))
 
 if __name__=="__main__":
-    app.run(debug=True)
+    # use_reloader=False: the stat reloader spawns a second process that
+    # re-imports everything, which is painfully slow here (Defender scans the
+    # venv on each file read). One process starts fine and stays up.
+    app.run(debug=True, use_reloader=False)
 
 ## --- WORK LEFT ---
 
@@ -465,9 +599,12 @@ if __name__=="__main__":
                 # - Nurse: Only assigned records (excluding diagnosis)
                 # - Patient: Only their own records
         # 2. Field-Level Encryption: All sensitive fields (name, symptoms, diagnosis) are encrypted using Fernet (AES-128)
-        # 3. Secure Keyword Search:
-                # - Real keywords are hashed using HMAC with a secret key
-                # - Dummy keyword hashes are added to prevent offline guessing and frequency analysis
+        # 3. Searchable Symmetric Encryption (SSE):
+                # - Encrypted inverted index (Curtmola et al. SSE-1 style)
+                # - Per-entry labels = PRF_trapdoor(counter): pseudorandom & unlinkable
+                # - Record ids stored encrypted under the keyword trapdoor
+                # - Search is O(#matches), not a full table scan
+                # - Accepted leakage: search access pattern + result size (inherent to efficient SSE)
 
 # 2. INTEGRITY:
         # 1. Record Integrity Hashing:
@@ -485,6 +622,7 @@ if __name__=="__main__":
 
 # --- INNOVATIVE FEATURES ---
 
-# 1. Dummy Keyword Padding: Prevents keyword count leakage & frequency analysis
+# 1. Encrypted Inverted Index (real SSE): unlinkable (label, Enc(id)) entries;
+#    sublinear search via per-keyword trapdoors instead of a LIKE table scan
 # 2. Record Integrity Hashing: Detects tampering of encrypted fields
-# 3. Search Tokens (SSE-lite): Secure keyword search using HMAC tokens
+# 3. Encrypted keyword sets per record enable clean re-indexing on edit/delete

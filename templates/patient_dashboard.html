@@ -1,46 +1,53 @@
-{% extends 'base.html' %} {% block head %}
-<title>My Medical Records</title>
-{% endblock %} {% block body %}
+{% extends 'base.html' %}
+{% block title %}My Records · MedCrypt{% endblock %}
+{% block body %}
 <div class="dashboard-container">
-  <div class="logout">
-    <a href="{{ url_for('logout') }}">Logout</a>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div class="brand-text"><strong>MedCrypt</strong><span>Secure Records</span></div>
+    </div>
+    <nav class="topbar-actions">
+      <span class="badge">Patient</span>
+      <a class="btn btn-secondary btn-sm" href="{{ url_for('logout') }}">Logout</a>
+    </nav>
+  </header>
+
+  <div class="page-head">
+    <span class="eyebrow">Your health record</span>
+    <h2>My Medical Records</h2>
+    <p>These records are encrypted at rest and integrity-checked on every view.</p>
   </div>
 
-  <h2>My Medical Records</h2>
-  {% if records|length < 1 %}
-  <p>No records found.</p>
-  {% else %}
-
-  <table class="record-table">
-    <tr>
-      <th>ID</th>
-      <th>Name</th>
-      <th>Symptoms</th>
-      <th>Diagnosis</th>
-      <th>Nurse</th>
-      <th>Doctor</th>
-    </tr>
-
-    {% for record in records %}
-    <tr class="{{ 'tampered-row' if record.is_tampered() else '' }}">
-      <td>{{ record.id }}</td>
-
-      {% if record.is_tampered() %}
-      <!-- TAMPERED: Apply warning class -->
-      <td colspan="5" class="tampered-warning">
-        ⚠️ SECURITY ALERT: RECORD TAMPERED
-      </td>
-      {% else %}
-      <!-- SAFE -->
-      <td>{{ decrypt(record.name).decode() }}</td>
-      <td>{{ decrypt(record.symptoms).decode() }}</td>
-      <td>{{ decrypt(record.diagnosis).decode() }}</td>
-      <td>{{ record.nurse.username }}</td>
-      <td>{{ record.doctor.username }}</td>
-      {% endif %}
-    </tr>
-    {% endfor %}
-  </table>
-  {% endif %}
+  <section class="card">
+    <div class="card-head"><h3>Records</h3></div>
+    {% if records|length < 1 %}
+    <div class="empty-state"><strong>No records yet</strong>Your care team hasn't added any records.</div>
+    {% else %}
+    <div class="table-wrap">
+      <table class="record-table">
+        <thead>
+          <tr><th>ID</th><th>Name</th><th>Symptoms</th><th>Diagnosis</th><th>Nurse</th><th>Doctor</th></tr>
+        </thead>
+        <tbody>
+          {% for record in records %}
+          <tr class="{{ 'tampered-row' if record.is_tampered() else '' }}">
+            <td class="id">{{ record.id }}</td>
+            {% if record.is_tampered() %}
+            <td colspan="5" class="tampered-warning">⚠️ Security alert: record tampered</td>
+            {% else %}
+            <td>{{ decrypt(record.name).decode() }}</td>
+            <td>{{ decrypt(record.symptoms).decode() }}</td>
+            <td>{{ decrypt(record.diagnosis).decode() }}</td>
+            <td>{{ record.nurse.username }}</td>
+            <td>{{ record.doctor.username }}</td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </section>
 </div>
 {% endblock %}

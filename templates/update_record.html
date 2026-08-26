@@ -1,51 +1,67 @@
-{% extends 'base.html' %} 
-{% block head %}
-<title>Update Record</title>
-{% endblock %} 
-
+{% extends 'base.html' %}
+{% block title %}Update Record · MedCrypt{% endblock %}
 {% block body %}
-<div class="content">
-  <h1>Update Medical Record</h1>
+<div class="dashboard-container">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div class="brand-text"><strong>MedCrypt</strong><span>Secure Records</span></div>
+    </div>
+    <nav class="topbar-actions">
+      <span class="badge">Doctor</span>
+      <a class="btn btn-ghost" href="{{ url_for('doctor_dashboard') }}">Back to dashboard</a>
+      <a class="btn btn-secondary btn-sm" href="{{ url_for('logout') }}">Logout</a>
+    </nav>
+  </header>
 
-  <form action="/update_record/{{ record.id }}" method="POST">
-    <!-- Patient dropdown with pre-selected value -->
-    <select name="patient_id" required>
-      <option value="">Select Patient</option>
-      {% for patient in patients %}
-        <option value="{{ patient.id }}" {% if patient.id == record.patient_id %}selected{% endif %}>
-          {{ patient.username }}
-        </option>
-      {% endfor %}
-    </select>
+  <div class="page-head">
+    <span class="eyebrow">Record #{{ record.id }}</span>
+    <h2>Update Medical Record</h2>
+    <p>Leave keywords blank to keep the existing searchable index unchanged.</p>
+  </div>
 
-    <!-- Optional Nurse dropdown -->
-    {% if nurses %}
-    <select name="nurse_id" required>
-      <option value="">Select Nurse</option>
-      {% for nurse in nurses %}
-        <option value="{{ nurse.id }}" {% if nurse.id == record.nurse_id %}selected{% endif %}>
-          {{ nurse.username }}
-        </option>
-      {% endfor %}
-    </select>
-    {% endif %}
+  <section class="card" style="max-width:620px">
+    <form action="/update_record/{{ record.id }}" method="POST">
+      <div class="field">
+        <label for="ur-patient">Patient</label>
+        <select id="ur-patient" name="patient_id" required>
+          <option value="">Select patient</option>
+          {% for patient in patients %}
+          <option value="{{ patient.id }}" {% if patient.id == record.patient_id %}selected{% endif %}>{{ patient.username }}</option>
+          {% endfor %}
+        </select>
+      </div>
 
-    <input
-      type="text"
-      name="symptoms"
-      placeholder="Symptoms"
-      value="{{ decrypt(record.symptoms).decode() }}"
-      required
-    />
-    <input
-      type="text"
-      name="diagnosis"
-      placeholder="Diagnosis"
-      value="{{ decrypt(record.diagnosis).decode() }}"
-      required
-    />
-    <input type="text" name="keywords" placeholder="Searchable Keywords" />
-    <input type="submit" value="Update Record" />
-  </form>
+      {% if nurses %}
+      <div class="field">
+        <label for="ur-nurse">Assigned nurse</label>
+        <select id="ur-nurse" name="nurse_id" required>
+          <option value="">Select nurse</option>
+          {% for nurse in nurses %}
+          <option value="{{ nurse.id }}" {% if nurse.id == record.nurse_id %}selected{% endif %}>{{ nurse.username }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+
+      <div class="field">
+        <label for="ur-symptoms">Symptoms</label>
+        <input id="ur-symptoms" type="text" name="symptoms" value="{{ decrypt(record.symptoms).decode() }}" required />
+      </div>
+      <div class="field">
+        <label for="ur-diagnosis">Diagnosis</label>
+        <input id="ur-diagnosis" type="text" name="diagnosis" value="{{ decrypt(record.diagnosis).decode() }}" required />
+      </div>
+      <div class="field">
+        <label for="ur-keywords">Searchable keywords <span style="color:var(--faint);font-weight:500">(optional)</span></label>
+        <input id="ur-keywords" type="text" name="keywords" placeholder="Comma-separated — leave blank to keep current" />
+      </div>
+
+      <div class="dialog-buttons" style="margin-top:6px">
+        <a class="btn btn-secondary" href="{{ url_for('doctor_dashboard') }}">Cancel</a>
+        <button type="submit">Update Record</button>
+      </div>
+    </form>
+  </section>
 </div>
 {% endblock %}

@@ -1,18 +1,37 @@
-{% extends 'base.html' %} {% block head %} <title>InfoSec Project</title> {%
-endblock %} {% block body %}
-<div class="login-container">
-  <h2>Login</h2>
-  {% if error %}
-  <div class="error">{{ error }}</div>
+{% extends 'base.html' %}
+{% block title %}Sign in · MedCrypt{% endblock %}
+{% block body_class %}auth{% endblock %}
+{% block body %}
+<main class="auth-card">
+  <div class="auth-head">
+    <span class="brand-mark lg" aria-hidden="true"></span>
+    <div>
+      <h1>Welcome back</h1>
+      <p>Sign in to the secure records console</p>
+    </div>
+  </div>
+
+  {% if notice %}
+  <div class="notice" role="status">{{ notice }}</div>
   {% endif %}
+  {% if error %}
+  <div class="error" role="alert">{{ error }}</div>
+  {% endif %}
+
   <form method="POST">
-    <label for="username">Username</label>
-    <input type="text" name="username" required />
-
-    <label for="password">Password</label>
-    <input type="password" name="password" required />
-
-    <button type="submit">Login</button>
+    <div class="field">
+      <label for="username">Username</label>
+      <input type="text" id="username" name="username" autocomplete="username" required />
+    </div>
+    <div class="field">
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" autocomplete="current-password" required />
+    </div>
+    <button type="submit" class="btn-block">Sign in</button>
   </form>
-</div>
+
+  <div class="auth-footer">
+    New patient? <a href="{{ url_for('register') }}">Create an account</a>
+  </div>
+</main>
 {% endblock %}

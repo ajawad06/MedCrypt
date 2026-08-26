@@ -1,32 +1,50 @@
-{% extends 'base.html' %} {% block head %}
-<title>Audit Logs</title>
-{% endblock %} {% block body %}
+{% extends 'base.html' %}
+{% block title %}Audit Logs · MedCrypt{% endblock %}
+{% block body %}
 <div class="dashboard-container">
-  <h2>Audit Logs</h2>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div class="brand-text"><strong>MedCrypt</strong><span>Secure Records</span></div>
+    </div>
+    <nav class="topbar-actions">
+      <a class="btn btn-ghost" href="{{ url_for('verify_logs') }}">Verify Logs</a>
+      <a class="btn btn-ghost" href="{{ url_for('doctor_dashboard') }}">Back to dashboard</a>
+      <a class="btn btn-secondary btn-sm" href="{{ url_for('logout') }}">Logout</a>
+    </nav>
+  </header>
 
-  {% if logs|length < 1 %}
-  <p>No logs found.</p>
-  {% else %}
-  <table class="record-table">
-    <tr>
-      <th>ID</th>
-      <th>User ID</th>
-      <th>Action</th>
-      <th>Record ID</th>
-      <th>IP Address</th>
-      <th>Timestamp</th>
-    </tr>
-    {% for log in logs %}
-    <tr>
-      <td>{{ log.id }}</td>
-      <td>{{ log.user_id }}</td>
-      <td>{{ log.action }}</td>
-      <td>{{ log.record_id }}</td>
-      <td>{{ log.ip_address }}</td>
-      <td>{{ log.timestamp }}</td>
-    </tr>
-    {% endfor %}
-  </table>
-  {% endif %}
+  <div class="page-head">
+    <span class="eyebrow">Tamper-evident trail</span>
+    <h2>Audit Logs</h2>
+    <p>Every access and change is recorded with an HMAC integrity hash.</p>
+  </div>
+
+  <section class="card">
+    <div class="card-head"><h3>Activity</h3></div>
+    {% if logs|length < 1 %}
+    <div class="empty-state"><strong>No logs yet</strong>Activity will appear here as the system is used.</div>
+    {% else %}
+    <div class="table-wrap">
+      <table class="record-table">
+        <thead>
+          <tr><th>ID</th><th>User ID</th><th>Action</th><th>Record ID</th><th>IP Address</th><th>Timestamp</th></tr>
+        </thead>
+        <tbody>
+          {% for log in logs %}
+          <tr>
+            <td class="id">{{ log.id }}</td>
+            <td class="id">{{ log.user_id if log.user_id is not none else '—' }}</td>
+            <td>{{ log.action }}</td>
+            <td class="id">{{ log.record_id if log.record_id is not none else '—' }}</td>
+            <td class="id">{{ log.ip_address or '—' }}</td>
+            <td>{{ log.timestamp }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </section>
 </div>
 {% endblock %}

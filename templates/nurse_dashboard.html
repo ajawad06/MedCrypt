@@ -1,46 +1,38 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Nurse Dashboard</title>
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='css/main.css') }}"
-    />
-  </head>
+{% extends 'base.html' %}
+{% block title %}Assigned Patients · MedCrypt{% endblock %}
+{% block body %}
+<div class="dashboard-container">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div class="brand-text"><strong>MedCrypt</strong><span>Secure Records</span></div>
+    </div>
+    <nav class="topbar-actions">
+      <span class="badge">Nurse</span>
+      <a class="btn btn-secondary btn-sm" href="{{ url_for('logout') }}">Logout</a>
+    </nav>
+  </header>
 
-  <body>
-    <div class="dashboard-container">
-      <div class="logout">
-        <a href="{{ url_for('logout') }}">Logout</a>
-      </div>
+  <div class="page-head">
+    <span class="eyebrow">Care assignments</span>
+    <h2>Assigned Patients</h2>
+    <p>Records assigned to you. Diagnosis details are restricted from this view.</p>
+  </div>
 
-      <h2>Assigned Patients</h2>
-
-      {% if records %}
+  <section class="card">
+    <div class="card-head"><h3>Patients</h3></div>
+    {% if records %}
+    <div class="table-wrap">
       <table class="patient-table">
         <thead>
-          <tr>
-            <th>Patient Name</th>
-            <th>Symptoms</th>
-            <th>Doctor</th>
-          </tr>
+          <tr><th>Patient Name</th><th>Symptoms</th><th>Doctor</th></tr>
         </thead>
-
         <tbody>
           {% for r in records %}
           <tr class="{{ 'tampered-row' if r.is_tampered() else '' }}">
             {% if r.is_tampered() %}
-            <!-- TAMPERED: Apply warning class -->
-            <td
-              colspan="3"
-              class="tampered-warning"
-              style="background-color: #ffcccc"
-            >
-              ⚠️ SECURITY ALERT: RECORD TAMPERED
-            </td>
+            <td colspan="3" class="tampered-warning">⚠️ Security alert: record tampered</td>
             {% else %}
-            <!-- SAFE -->
             <td>{{ decrypt(r.name).decode() }}</td>
             <td>{{ decrypt(r.symptoms).decode() }}</td>
             <td>{{ r.doctor.username }}</td>
@@ -49,9 +41,10 @@
           {% endfor %}
         </tbody>
       </table>
-      {% else %}
-      <p>No records assigned to you yet.</p>
-      {% endif %}
     </div>
-  </body>
-</html>
+    {% else %}
+    <div class="empty-state"><strong>No assignments yet</strong>No records have been assigned to you.</div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

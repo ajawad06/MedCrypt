@@ -1,196 +1,180 @@
-{% extends 'base.html' %} {% block head %}
-<title>InfoSec Project</title>
-{% endblock %} {% block body %}
-
+{% extends 'base.html' %}
+{% block title %}Doctor Console · MedCrypt{% endblock %}
+{% block body %}
 <div class="dashboard-container">
-  <div class="logout">
-    <a href="{{ url_for('logout') }}">Logout</a>
-    <a href="{{ url_for('audit_logs') }}">View Audit Logs</a>
-    <a href="{{ url_for('verify_logs') }}">Verify Audit Logs</a>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div class="brand-text"><strong>MedCrypt</strong><span>Secure Records</span></div>
+    </div>
+    <nav class="topbar-actions">
+      <span class="badge">Doctor</span>
+      <a class="btn btn-ghost" href="{{ url_for('audit_logs') }}">Audit Logs</a>
+      <a class="btn btn-ghost" href="{{ url_for('verify_logs') }}">Verify Logs</a>
+      <a class="btn btn-secondary btn-sm" href="{{ url_for('logout') }}">Logout</a>
+    </nav>
+  </header>
+
+  <div class="page-head">
+    <span class="eyebrow">Clinical console</span>
+    <h2>Doctor Dashboard</h2>
+    <p>Manage patients, encrypted medical records, and secure keyword search.</p>
   </div>
 
-  <h2>Doctor Dashboard</h2>
+  {% if request.args.get('error') %}
+  <div class="error" role="alert">{{ request.args.get('error') }}</div>
+  {% endif %}
 
-  <!-- 1. Patients Table -->
-  <h3>All Patients</h3>
+  <!-- 1. Patients -->
+  <section class="card">
+    <div class="card-head">
+      <h3>All Patients</h3>
+      <button class="btn-sm" onclick="document.getElementById('registerPatientDialog').showModal()">
+        + Register Patient
+      </button>
+    </div>
 
-  <table class="patient-table">
-    <tr>
-      <th>Patient ID</th>
-      <th>Username</th>
-      <th>Actions</th>
-    </tr>
+    {% if patients|length < 1 %}
+    <div class="empty-state"><strong>No patients yet</strong>Register a patient to get started.</div>
+    {% else %}
+    <div class="table-wrap">
+      <table class="patient-table">
+        <thead>
+          <tr><th>ID</th><th>Username</th><th style="text-align:right">Actions</th></tr>
+        </thead>
+        <tbody>
+          {% for patient in patients %}
+          <tr>
+            <td class="id">{{ patient.id }}</td>
+            <td>{{ patient.username }}</td>
+            <td style="text-align:right">
+              <span class="row-actions">
+                <a class="danger" href="{{ url_for('remove_patient', id=patient.id) }}"
+                   onclick="return confirm('Are you sure you want to remove this patient? This deletes all their records.')">Remove</a>
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </section>
 
-    {% for patient in patients %}
-    <tr>
-      <td>{{ patient.id }}</td>
-      <td>{{ patient.username }}</td>
-      <td>
-        <a
-          href="{{ url_for('remove_patient', id=patient.id) }}"
-          onclick="return confirm('Are you sure you want to remove this patient?')"
-        >
-          Remove
-        </a>
-      </td>
-    </tr>
-    {% endfor %}
-  </table>
+  <!-- 2. Records -->
+  <section class="card">
+    <div class="card-head">
+      <h3>Medical Records</h3>
+      <button class="btn-sm" onclick="document.getElementById('addRecordDialog').showModal()">
+        + Add Record
+      </button>
+    </div>
 
-  <!-- 2. Register Patient Button -->
-  <button
-    onclick="document.getElementById('registerPatientDialog').showModal()"
-  >
-    Register Patient
-  </button>
+    {% if records|length < 1 %}
+    <div class="empty-state"><strong>No records yet</strong>Add a medical record with the button above.</div>
+    {% else %}
+    <form method="POST" action="{{ url_for('search_record') }}" class="search-form">
+      <label class="sr-only" for="search-keyword">Search records by keyword</label>
+      <span class="search-field">
+        <input id="search-keyword" type="text" name="keyword"
+               placeholder="Search records by keyword…" required />
+      </span>
+      <button type="submit">Search</button>
+    </form>
 
-  <!-- 3. Register Patient Dialog -->
+    <div class="table-wrap">
+      <table class="record-table">
+        <thead>
+          <tr>
+            <th>ID</th><th>Patient</th><th>Symptoms</th><th>Diagnosis</th><th>Nurse</th>
+            <th style="text-align:right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for record in records %}
+          <tr class="{{ 'tampered-row' if record.is_tampered() else '' }}">
+            <td class="id">{{ record.id }}</td>
+            {% if record.is_tampered() %}
+            <td colspan="4" class="tampered-warning">⚠️ Security alert: record tampered</td>
+            {% else %}
+            <td>{{ decrypt(record.name).decode() }}</td>
+            <td>{{ decrypt(record.symptoms).decode() }}</td>
+            <td>{{ decrypt(record.diagnosis).decode() }}</td>
+            <td>{{ record.nurse.username }}</td>
+            {% endif %}
+            <td style="text-align:right">
+              <span class="row-actions">
+                <a href="{{ url_for('update_record', id=record.id) }}">Update</a>
+                <a class="danger" href="{{ url_for('delete_record', id=record.id) }}"
+                   onclick="return confirm('Delete this record permanently?')">Delete</a>
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </section>
+
+  <!-- Register Patient Dialog -->
   <dialog id="registerPatientDialog" class="record-dialog">
     <form method="POST" action="{{ url_for('register_patient') }}">
       <h3>Register New Patient</h3>
-
-      {% if error %}
-      <p class="error">{{ error }}</p>
-      {% endif %}
-
-      <input
-        type="text"
-        name="username"
-        placeholder="Patient Username"
-        required
-      />
-      <input
-        type="password"
-        name="password"
-        placeholder="Temporary Password"
-        required
-      />
-
+      <div class="field">
+        <label for="rp-username">Username</label>
+        <input id="rp-username" type="text" name="username" placeholder="Patient full name" required />
+      </div>
+      <div class="field">
+        <label for="rp-password">Temporary password</label>
+        <input id="rp-password" type="password" name="password" placeholder="Temporary password" required />
+      </div>
       <div class="dialog-buttons">
+        <button type="button" onclick="document.getElementById('registerPatientDialog').close()">Cancel</button>
         <button type="submit">Register</button>
-        <button
-          type="button"
-          onclick="document.getElementById('registerPatientDialog').close()"
-        >
-          Cancel
-        </button>
       </div>
     </form>
   </dialog>
 
-  {% if request.args.get('error') %}
-  <div class="error">{{ request.args.get('error') }}</div>
-  {% endif %}
-
-  <h3>All Records</h3>
-  {% if records|length < 1 %}
-  <h4>There are no records. Create one below!</h4>
-  {% else %}
-
-  <!-- 4. Search -->
-  <form
-    method="POST"
-    action="{{ url_for('search_record') }}"
-    class="search-form"
-  >
-    <input
-      type="text"
-      name="keyword"
-      placeholder=" 🔍 Search Record"
-      required
-    />
-    <button type="submit">Search</button>
-  </form>
-
-  <!-- 5. Records Table -->
-  <!-- 5. Records Table -->
-  <table class="record-table">
-    <tr>
-      <th>ID</th>
-      <th>Patient</th>
-      <th>Symptoms</th>
-      <th>Diagnosis</th>
-      <th>Nurse</th>
-      <th>Actions</th>
-    </tr>
-
-    {% for record in records %}
-
-    <tr class="{{ 'tampered-row' if record.is_tampered() else '' }}">
-      <td>{{ record.id }}</td>
-
-      {% if record.is_tampered() %}
-
-      <!-- Warning Message -->
-      <td colspan="4" class="tampered-warning">
-        ⚠️ SECURITY ALERT: RECORD TAMPERED
-      </td>
-
-      {% else %}
-
-      <!-- Normal Data -->
-      <td>{{ decrypt(record.name).decode() }}</td>
-      <td>{{ decrypt(record.symptoms).decode() }}</td>
-      <td>{{ decrypt(record.diagnosis).decode() }}</td>
-      <td>{{ record.nurse.username }}</td>
-
-      {% endif %}
-
-      <td>
-        <a href="{{ url_for('delete_record', id=record.id) }}">Delete</a><br />
-        <a href="{{ url_for('update_record', id=record.id) }}">Update</a>
-      </td>
-    </tr>
-    {% endfor %}
-  </table>
-
-  {% endif %}
-
-  <!-- 6. Add Record Dialog -->
-  <button onclick="document.getElementById('addRecordDialog').showModal()">
-    Add Record
-  </button>
-
+  <!-- Add Record Dialog -->
   <dialog id="addRecordDialog" class="record-dialog">
     <form method="POST" action="{{ url_for('doctor_dashboard') }}">
-      <h3>Add New Medical Record</h3>
-
-      <!-- <input type="text" name="name" placeholder="Patient Name" required /> -->
-      <!-- select patient from dropdown -->
-      <select name="patient_id" required>
-        <option value="">Select Patient</option>
-        {% for patient in patients %}
-        <option value="{{ patient.id }}">{{ patient.username }}</option>
-        {% endfor %}
-      </select>
-      <input type="text" name="symptoms" placeholder="Symptoms" required />
-      <input type="text" name="diagnosis" placeholder="Diagnosis" required />
-      <input
-        type="text"
-        name="keywords"
-        placeholder="Searchable Keywords"
-        required
-      />
-
-      <!-- select nurse from dropdown -->
-      <select name="nurse_id" required>
-        <option value="">Select Nurse</option>
-        {% for nurse in nurses %}
-        <option value="{{ nurse.id }}">{{ nurse.username }}</option>
-        {% endfor %}
-      </select>
-
+      <h3>Add Medical Record</h3>
+      <div class="field">
+        <label for="ar-patient">Patient</label>
+        <select id="ar-patient" name="patient_id" required>
+          <option value="">Select patient</option>
+          {% for patient in patients %}
+          <option value="{{ patient.id }}">{{ patient.username }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="ar-symptoms">Symptoms</label>
+        <input id="ar-symptoms" type="text" name="symptoms" placeholder="e.g. fever, fatigue" required />
+      </div>
+      <div class="field">
+        <label for="ar-diagnosis">Diagnosis</label>
+        <input id="ar-diagnosis" type="text" name="diagnosis" placeholder="e.g. viral infection" required />
+      </div>
+      <div class="field">
+        <label for="ar-keywords">Searchable keywords</label>
+        <input id="ar-keywords" type="text" name="keywords" placeholder="Comma-separated, e.g. fever, flu" required />
+      </div>
+      <div class="field">
+        <label for="ar-nurse">Assigned nurse</label>
+        <select id="ar-nurse" name="nurse_id" required>
+          <option value="">Select nurse</option>
+          {% for nurse in nurses %}
+          <option value="{{ nurse.id }}">{{ nurse.username }}</option>
+          {% endfor %}
+        </select>
+      </div>
       <div class="dialog-buttons">
+        <button type="button" onclick="document.getElementById('addRecordDialog').close()">Cancel</button>
         <button type="submit">Submit Record</button>
-        <button
-          type="button"
-          onclick="document.getElementById('addRecordDialog').close()"
-        >
-          Cancel
-        </button>
       </div>
     </form>
   </dialog>
 </div>
-
 {% endblock %}

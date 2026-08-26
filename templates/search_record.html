@@ -1,28 +1,49 @@
-{% extends 'base.html' %} {% block head %}<title>Search Results</title>{%
-endblock %} {% block body %}
+{% extends 'base.html' %}
+{% block title %}Search Results · MedCrypt{% endblock %}
+{% block body %}
 <div class="dashboard-container">
-  <h2>Search Results</h2>
-  {% if records|length < 1 %}
-  <p>No matching records found.</p>
-  {% else %}
-  <table class="record-table">
-    <tr>
-      <th>ID</th>
-      <th>Patient ID</th>
-      <th>Name</th>
-      <th>Symptoms</th>
-      <th>Diagnosis</th>
-    </tr>
-    {% for record in records %}
-    <tr>
-      <td>{{ record.id }}</td>
-      <td>{{ record.patient_id }}</td>
-      <td>{{ decrypt(record.name).decode() }}</td>
-      <td>{{ decrypt(record.symptoms).decode() }}</td>
-      <td>{{ decrypt(record.diagnosis).decode() }}</td>
-    </tr>
-    {% endfor %}
-  </table>
-  {% endif %}
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div class="brand-text"><strong>MedCrypt</strong><span>Secure Records</span></div>
+    </div>
+    <nav class="topbar-actions">
+      <span class="badge">Doctor</span>
+      <a class="btn btn-ghost" href="{{ url_for('doctor_dashboard') }}">Back to dashboard</a>
+      <a class="btn btn-secondary btn-sm" href="{{ url_for('logout') }}">Logout</a>
+    </nav>
+  </header>
+
+  <div class="page-head">
+    <span class="eyebrow">Encrypted keyword search</span>
+    <h2>Search Results</h2>
+    <p>Matched via the encrypted inverted index — no plaintext keywords are stored.</p>
+  </div>
+
+  <section class="card">
+    <div class="card-head"><h3>Matches</h3></div>
+    {% if records|length < 1 %}
+    <div class="empty-state"><strong>No matching records</strong>Try a different keyword.</div>
+    {% else %}
+    <div class="table-wrap">
+      <table class="record-table">
+        <thead>
+          <tr><th>ID</th><th>Patient ID</th><th>Name</th><th>Symptoms</th><th>Diagnosis</th></tr>
+        </thead>
+        <tbody>
+          {% for record in records %}
+          <tr>
+            <td class="id">{{ record.id }}</td>
+            <td class="id">{{ record.patient_id }}</td>
+            <td>{{ decrypt(record.name).decode() }}</td>
+            <td>{{ decrypt(record.symptoms).decode() }}</td>
+            <td>{{ decrypt(record.diagnosis).decode() }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </section>
 </div>
 {% endblock %}
